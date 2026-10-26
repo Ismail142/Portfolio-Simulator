@@ -30,6 +30,10 @@ const fmt = (n: number) =>
       ? `$${(n / 1000).toFixed(2)}K`
       : `$${n.toFixed(2)}`;
 
+function monthlyWithdrawal(value: number, withdrawalRate: number) {
+  return (value * (withdrawalRate / 100)) / 12;
+}
+
 function computeGrowth(
   principal: number,
   annualRate: number,
@@ -61,12 +65,22 @@ const CustomTooltip = ({
   active,
   payload,
   label,
+  currentAge,
+  withdrawalRate,
 }: {
   active?: boolean;
   payload?: TooltipPayload[];
   label?: number | string;
+  currentAge: number;
+  withdrawalRate: number;
 }) => {
   if (!active || !payload?.length) return null;
+  const year = Number(label ?? 0);
+  const futureAge = currentAge + year;
+  const valuePoint = payload.find((p) => p.name === "Total Value");
+  const totalValue = Number(valuePoint?.value ?? 0);
+  const monthly = monthlyWithdrawal(totalValue, withdrawalRate);
+
   return (
     <div
       style={{
@@ -79,13 +93,18 @@ const CustomTooltip = ({
       }}
     >
       <div style={{ color: "#888", marginBottom: 6, fontSize: 11, letterSpacing: 1 }}>
-        YEAR {label}
+        YEAR {label} · AGE {futureAge}
       </div>
       {payload.map((p, i) => (
         <div key={i} style={{ color: p.color, lineHeight: 1.7 }}>
           {p.name}: {fmt(Number(p.value ?? 0))}
         </div>
       ))}
+      {withdrawalRate > 0 && (
+        <div style={{ color: "#ffbe0b", lineHeight: 1.7, marginTop: 4 }}>
+          Monthly @ {withdrawalRate}%: {fmt(monthly)}
+        </div>
+      )}
     </div>
   );
 };
@@ -98,12 +117,16 @@ export default function CompoundGrowth() {
   const [draftContribution, setDraftContribution] = useState<number | "">(500);
   const [draftFrequency, setDraftFrequency] = useState<Frequency>("monthly");
   const [draftYears, setDraftYears] = useState<number | "">(20);
+  const [draftAge, setDraftAge] = useState<number | "">(30);
+  const [draftWithdrawalRate, setDraftWithdrawalRate] = useState<number | "">(4);
 
   const [principal, setPrincipal] = useState(10000);
   const [rate, setRate] = useState(8);
   const [contribution, setContribution] = useState(500);
   const [frequency, setFrequency] = useState<Frequency>("monthly");
   const [years, setYears] = useState(20);
+  const [age, setAge] = useState(30);
+  const [withdrawalRate, setWithdrawalRate] = useState(4);
   const [calculated, setCalculated] = useState(false);
 
   useEffect(() => {
@@ -117,11 +140,15 @@ export default function CompoundGrowth() {
         contribution?: number;
         frequency?: Frequency;
         years?: number;
+        age?: number;
+        withdrawalRate?: number;
       };
       const p = Math.max(0, Number(saved.principal) || 0);
       const r = Math.max(0, Number(saved.rate) || 0);
       const c = Math.max(0, Number(saved.contribution) || 0);
       const y = Math.max(1, Math.floor(Number(saved.years) || 1));
+      const a = Math.max(0, Math.floor(Number(saved.age) || 0));
+      const wr = Math.max(0, Number(saved.withdrawalRate) || 0);
       const freq: Frequency =
         FREQ_OPTIONS.find((f) => f.value === saved.frequency)?.value ?? "monthly";
       setDraftPrincipal(p);
@@ -129,11 +156,15 @@ export default function CompoundGrowth() {
       setDraftContribution(c);
       setDraftFrequency(freq);
       setDraftYears(y);
+      setDraftAge(a);
+      setDraftWithdrawalRate(wr);
       setPrincipal(p);
       setRate(r);
       setContribution(c);
       setFrequency(freq);
       setYears(y);
+      setAge(a);
+      setWithdrawalRate(wr);
       setCalculated(true);
     } catch {
       /* ignore corrupt storage */
@@ -145,7 +176,9 @@ export default function CompoundGrowth() {
     Number(draftRate) !== rate ||
     Number(draftContribution) !== contribution ||
     draftFrequency !== frequency ||
-    Number(draftYears) !== years;
+    Number(draftYears) !== years ||
+    Number(draftAge) !== age ||
+    Number(draftWithdrawalRate) !== withdrawalRate;
 
   const freqInfo = FREQ_OPTIONS.find((f) => f.value === frequency)!;
   const draftFreqInfo = FREQ_OPTIONS.find((f) => f.value === draftFrequency)!;
@@ -155,21 +188,35 @@ export default function CompoundGrowth() {
     const r = Math.max(0, Number(draftRate) || 0);
     const c = Math.max(0, Number(draftContribution) || 0);
     const y = Math.max(1, Math.floor(Number(draftYears) || 1));
+    const a = Math.max(0, Math.floor(Number(draftAge) || 0));
+    const wr = Math.max(0, Number(draftWithdrawalRate) || 0);
     setDraftPrincipal(p);
     setDraftRate(r);
     setDraftContribution(c);
     setDraftYears(y);
+    setDraftAge(a);
+    setDraftWithdrawalRate(wr);
     setPrincipal(p);
     setRate(r);
     setContribution(c);
     setFrequency(draftFrequency);
     setYears(y);
+    setAge(a);
+    setWithdrawalRate(wr);
     setCalculated(true);
     if (typeof window !== "undefined") {
       try {
         window.localStorage.setItem(
           CG_STORAGE_KEY,
-          JSON.stringify({ principal: p, rate: r, contribution: c, frequency: draftFrequency, years: y }),
+          JSON.stringify({
+            principal: p,
+            rate: r,
+            contribution: c,
+            frequency: draftFrequency,
+            years: y,
+            age: a,
+            withdrawalRate: wr,
+          }),
         );
       } catch {
         /* storage may be unavailable */
@@ -190,9 +237,16 @@ export default function CompoundGrowth() {
       const point = computeGrowth(principal, rate, contribution, freqInfo.perYear, y);
       const last = point[point.length - 1];
       const interest = last.value - last.contributed;
-      return { year: y, value: last.value, contributed: last.contributed, interest };
+      return {
+        year: y,
+        age: age + y,
+        value: last.value,
+        contributed: last.contributed,
+        interest,
+        monthly: monthlyWithdrawal(last.value, withdrawalRate),
+      };
     });
-  }, [principal, rate, contribution, freqInfo.perYear, years]);
+  }, [principal, rate, contribution, freqInfo.perYear, years, age, withdrawalRate]);
 
   const maxYear = growthData[growthData.length - 1]?.year ?? years;
 
@@ -260,7 +314,11 @@ export default function CompoundGrowth() {
                 key={f.value}
                 type="button"
                 className={`rate-btn ${draftFrequency === f.value ? "active" : ""}`}
-                style={{ color: draftFrequency === f.value ? "#00ff87" : undefined, fontSize: 11, padding: "5px 10px" }}
+                style={{
+                  color: draftFrequency === f.value ? "#00ff87" : undefined,
+                  fontSize: 11,
+                  padding: "5px 10px",
+                }}
                 onClick={() => setDraftFrequency(f.value)}
               >
                 {f.label.toUpperCase()}
@@ -283,6 +341,38 @@ export default function CompoundGrowth() {
             onChange={(e) => setDraftYears(e.target.value === "" ? "" : +e.target.value)}
           />
         </div>
+
+        <div className="stat-card slider-wrap">
+          <div className="slider-label">
+            <span>Current Age</span>
+            <span className="slider-val">{Number(draftAge) || 0}</span>
+          </div>
+          <input
+            className="num-input"
+            type="number"
+            min={0}
+            step={1}
+            value={draftAge}
+            onChange={(e) => setDraftAge(e.target.value === "" ? "" : +e.target.value)}
+          />
+        </div>
+
+        <div className="stat-card slider-wrap">
+          <div className="slider-label">
+            <span>Withdrawal Rate (%)</span>
+            <span className="slider-val">{Number(draftWithdrawalRate) || 0}%</span>
+          </div>
+          <input
+            className="num-input"
+            type="number"
+            min={0}
+            step={0.1}
+            value={draftWithdrawalRate}
+            onChange={(e) =>
+              setDraftWithdrawalRate(e.target.value === "" ? "" : +e.target.value)
+            }
+          />
+        </div>
       </div>
 
       <div className="calc-bar">
@@ -302,8 +392,10 @@ export default function CompoundGrowth() {
           <div className="section">
             <h2 className="section-title">GROWTH MILESTONES</h2>
             <p style={{ color: "#666", fontSize: 12, marginTop: -8, marginBottom: 16 }}>
-              Portfolio value at key time horizons · {freqInfo.label.toLowerCase()} contributions of{" "}
-              {fmt(contribution)} · {rate}% annual rate
+              Portfolio value at key time horizons · starting age {age} ·{" "}
+              {freqInfo.label.toLowerCase()} contributions of {fmt(contribution)} · {rate}% annual
+              rate
+              {withdrawalRate > 0 ? ` · ${withdrawalRate}% withdrawal` : ""}
             </p>
             <div
               style={{
@@ -312,9 +404,12 @@ export default function CompoundGrowth() {
                 gap: 12,
               }}
             >
-              {milestoneData.map((m, i) => {
+              {milestoneData.map((m) => {
                 const isCustom = m.year === years && !MILESTONE_YEARS.includes(m.year);
-                const color = isCustom ? "#00ff87" : MILESTONE_COLORS[MILESTONE_YEARS.indexOf(m.year)] ?? "#00ff87";
+                const color =
+                  isCustom
+                    ? "#00ff87"
+                    : MILESTONE_COLORS[MILESTONE_YEARS.indexOf(m.year)] ?? "#00ff87";
                 return (
                   <div
                     key={m.year}
@@ -344,7 +439,8 @@ export default function CompoundGrowth() {
                         marginBottom: 10,
                       }}
                     >
-                      YEAR {m.year}{isCustom ? " (CUSTOM)" : ""}
+                      YEAR {m.year}
+                      {isCustom ? " (CUSTOM)" : ""} · AGE {m.age}
                     </div>
                     <div style={{ fontSize: 11, color: "#555", lineHeight: 1.8 }}>
                       <div>
@@ -363,6 +459,12 @@ export default function CompoundGrowth() {
                             : "—"}
                         </span>
                       </div>
+                      {withdrawalRate > 0 && (
+                        <div>
+                          Monthly @ {withdrawalRate}%:{" "}
+                          <span style={{ color: "#ffbe0b" }}>{fmt(m.monthly)}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -387,7 +489,11 @@ export default function CompoundGrowth() {
                     tick={{ fill: "#666", fontSize: 11 }}
                     tickFormatter={(v) => fmt(Number(v))}
                   />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip
+                    content={
+                      <CustomTooltip currentAge={age} withdrawalRate={withdrawalRate} />
+                    }
+                  />
                   <Legend wrapperStyle={{ fontSize: 12, color: "#888" }} />
                   {MILESTONE_YEARS.filter((y) => y <= maxYear).map((y, i) => (
                     <ReferenceLine
@@ -428,11 +534,17 @@ export default function CompoundGrowth() {
               <table>
                 <thead>
                   <tr>
-                    {["Year", "Total Value", "Amount Invested", "Interest Earned", "Return"].map(
-                      (h) => (
-                        <th key={h}>{h}</th>
-                      ),
-                    )}
+                    {[
+                      "Year",
+                      "Age",
+                      "Total Value",
+                      "Amount Invested",
+                      "Interest Earned",
+                      "Return",
+                      ...(withdrawalRate > 0 ? [`Monthly @ ${withdrawalRate}%`] : []),
+                    ].map((h) => (
+                      <th key={h}>{h}</th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
@@ -459,11 +571,14 @@ export default function CompoundGrowth() {
                             : milestoneIdx >= 0
                               ? MILESTONE_COLORS[milestoneIdx]
                               : "#aaa";
+                      const futureAge = age + d.year;
+                      const monthly = monthlyWithdrawal(d.value, withdrawalRate);
                       return (
                         <tr key={d.year}>
                           <td style={{ color, fontWeight: 500 }}>
                             {d.year === 0 ? "Start" : `Year ${d.year}${isCustom ? " ★" : ""}`}
                           </td>
+                          <td style={{ color: "#00d4ff" }}>{futureAge}</td>
                           <td style={{ color: "#00ff87" }}>{fmt(d.value)}</td>
                           <td style={{ color: "#aaa" }}>{fmt(d.contributed)}</td>
                           <td style={{ color: interest >= 0 ? "#00ff87" : "#ff6b6b" }}>
@@ -471,6 +586,9 @@ export default function CompoundGrowth() {
                             {fmt(interest)}
                           </td>
                           <td style={{ color: "#ffbe0b" }}>{pct}%</td>
+                          {withdrawalRate > 0 && (
+                            <td style={{ color: "#ffbe0b" }}>{fmt(monthly)}</td>
+                          )}
                         </tr>
                       );
                     })}
