@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import PortfolioSimulator from "./PortfolioSimulator";
 import CompoundGrowth from "./CompoundGrowth";
 import RetirementDrawdown from "./RetirementDrawdown";
@@ -9,67 +8,117 @@ import SP500Returns from "./SP500Returns";
 import CryptoReturns from "./CryptoReturns";
 import UsdGhsReturns from "./UsdGhsReturns";
 
-const NAV_ITEMS: { path: string; label: string; short: string }[] = [
-  { path: "/", label: "Portfolio Simulator", short: "SIMULATOR" },
-  { path: "/compound-growth", label: "Compound Growth", short: "COMPOUND" },
-  { path: "/retirement-planner", label: "Retirement Planner", short: "RETIREMENT" },
-  { path: "/yield-calculator", label: "Yield Calculator", short: "YIELD" },
-  { path: "/dynamic-withdrawal", label: "Dynamic Withdrawal", short: "DYNAMIC" },
-  { path: "/sp500-returns", label: "S&P 500 Returns", short: "S&P 500" },
-  { path: "/crypto-returns", label: "Crypto Returns", short: "CRYPTO" },
-  { path: "/usdghs-returns", label: "USD/GHS Returns", short: "USD/GHS" },
+type PageId =
+  | "simulator"
+  | "compound-growth"
+  | "retirement-planner"
+  | "yield-calculator"
+  | "dynamic-withdrawal"
+  | "sp500-returns"
+  | "crypto-returns"
+  | "usdghs-returns";
+
+const PAGE_STORAGE_KEY = "finance-tools-active-page";
+const SCROLL_STORAGE_KEY = "finance-tools-scroll-positions";
+
+const NAV_ITEMS: { id: PageId; label: string; short: string }[] = [
+  { id: "simulator", label: "Portfolio Simulator", short: "SIMULATOR" },
+  { id: "compound-growth", label: "Compound Growth", short: "COMPOUND" },
+  { id: "retirement-planner", label: "Retirement Planner", short: "RETIREMENT" },
+  { id: "yield-calculator", label: "Yield Calculator", short: "YIELD" },
+  { id: "dynamic-withdrawal", label: "Dynamic Withdrawal", short: "DYNAMIC" },
+  { id: "sp500-returns", label: "S&P 500 Returns", short: "S&P 500" },
+  { id: "crypto-returns", label: "Crypto Returns", short: "CRYPTO" },
+  { id: "usdghs-returns", label: "USD/GHS Returns", short: "USD/GHS" },
 ];
 
-const PAGE_META: Record<string, { title: string; subtitle: string }> = {
-  "/": {
+const PAGE_META: Record<PageId, { title: string; subtitle: string }> = {
+  simulator: {
     title: "PORTFOLIO SIMULATOR",
     subtitle:
       "Choose % withdrawal or fixed monthly amount · monthly contributions included",
   },
-  "/compound-growth": {
+  "compound-growth": {
     title: "COMPOUND GROWTH",
     subtitle:
       "Calculate how your investment grows with compound interest and regular contributions",
   },
-  "/retirement-planner": {
+  "retirement-planner": {
     title: "RETIREMENT DRAWDOWN PLANNER",
     subtitle:
       "Solve for the exact monthly withdrawal that draws your portfolio to $0 at your life expectancy",
   },
-  "/yield-calculator": {
+  "yield-calculator": {
     title: "PORTFOLIO YIELD CALCULATOR",
     subtitle:
       "Enter USD or GHS value · see monthly and annual yield at 4–8% · live currency conversion",
   },
-  "/dynamic-withdrawal": {
+  "dynamic-withdrawal": {
     title: "DYNAMIC WITHDRAWAL SIMULATOR",
     subtitle: `Test dynamic withdrawal against real S&P 500 returns 1926–${new Date().getFullYear()} · USD & GHS`,
   },
-  "/sp500-returns": {
+  "sp500-returns": {
     title: "S&P 500 RETURNS",
     subtitle:
       "Choose any window length · rolling CAGRs · annual return distributions · best / median / worst periods",
   },
-  "/crypto-returns": {
+  "crypto-returns": {
     title: "CRYPTO RETURNS",
     subtitle:
       "Bitcoin annual returns · choose any window length · rolling CAGRs · best / median / worst periods",
   },
-  "/usdghs-returns": {
+  "usdghs-returns": {
     title: "USD/GHS RETURNS",
     subtitle:
       "USD to GHS exchange-rate annual returns · choose any window length · rolling CAGRs · best / median / worst periods",
   },
 };
 
-export default function App() {
-  const location = useLocation();
-  const [menuOpen, setMenuOpen] = useState(false);
-  const meta = PAGE_META[location.pathname] ?? PAGE_META["/"];
+const PAGE_COMPONENTS: Record<PageId, React.ComponentType> = {
+  simulator: PortfolioSimulator,
+  "compound-growth": CompoundGrowth,
+  "retirement-planner": RetirementDrawdown,
+  "yield-calculator": PortfolioYield,
+  "dynamic-withdrawal": DynamicWithdrawal,
+  "sp500-returns": SP500Returns,
+  "crypto-returns": CryptoReturns,
+  "usdghs-returns": UsdGhsReturns,
+};
 
-  // Per-route scroll memory: each path restores the Y it had when last visited
-  const scrollPositions = useRef<Record<string, number>>({});
-  const prevPathRef = useRef(location.pathname);
+function isPageId(value: unknown): value is PageId {
+  return typeof value === "string" && value in PAGE_META;
+}
+
+function loadInitialPage(): PageId {
+  if (typeof window === "undefined") return "simulator";
+  try {
+    const raw = window.localStorage.getItem(PAGE_STORAGE_KEY);
+    if (isPageId(raw)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return "simulator";
+}
+
+function loadScrollPositions(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SCROLL_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export default function App() {
+  const [page, setPage] = useState<PageId>(loadInitialPage);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const scrollPositions = useRef<Record<string, number>>(loadScrollPositions());
+  const prevPageRef = useRef<PageId>(page);
+  const meta = PAGE_META[page];
+  const ActivePage = PAGE_COMPONENTS[page];
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -80,19 +129,66 @@ export default function App() {
     }
   }, []);
 
+  // Persist active page
   useEffect(() => {
-    const prevPath = prevPathRef.current;
-    if (prevPath !== location.pathname) {
-      scrollPositions.current[prevPath] = window.scrollY;
-      prevPathRef.current = location.pathname;
+    try {
+      window.localStorage.setItem(PAGE_STORAGE_KEY, page);
+    } catch {
+      /* ignore */
     }
-    const y = scrollPositions.current[location.pathname] ?? 0;
-    // Restore after paint so layout height is ready
+  }, [page]);
+
+  // Save/restore scroll when switching pages
+  useEffect(() => {
+    const prev = prevPageRef.current;
+    if (prev !== page) {
+      scrollPositions.current[prev] = window.scrollY;
+      try {
+        window.localStorage.setItem(
+          SCROLL_STORAGE_KEY,
+          JSON.stringify(scrollPositions.current),
+        );
+      } catch {
+        /* ignore */
+      }
+      prevPageRef.current = page;
+    }
+    const y = scrollPositions.current[page] ?? 0;
     const id = window.requestAnimationFrame(() => {
       window.scrollTo(0, y);
     });
     return () => window.cancelAnimationFrame(id);
-  }, [location.pathname]);
+  }, [page]);
+
+  // Persist scroll on leave / hide (refresh, tab close, background)
+  useEffect(() => {
+    const persist = () => {
+      scrollPositions.current[prevPageRef.current] = window.scrollY;
+      try {
+        window.localStorage.setItem(PAGE_STORAGE_KEY, prevPageRef.current);
+        window.localStorage.setItem(
+          SCROLL_STORAGE_KEY,
+          JSON.stringify(scrollPositions.current),
+        );
+      } catch {
+        /* ignore */
+      }
+    };
+    window.addEventListener("pagehide", persist);
+    window.addEventListener("beforeunload", persist);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") persist();
+    });
+    return () => {
+      window.removeEventListener("pagehide", persist);
+      window.removeEventListener("beforeunload", persist);
+    };
+  }, []);
+
+  const goTo = (id: PageId) => {
+    setPage(id);
+    setMenuOpen(false);
+  };
 
   return (
     <div
@@ -131,7 +227,7 @@ export default function App() {
         .mode-btn.active { background: #00ff8722; color: #00ff87; }
         .topbar { position: sticky; top: 0; z-index: 50; background: rgba(7,7,16,0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid #1a1a28; }
         .topbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px; }
-        .topbar-brand { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 3px; color: #fff; white-space: nowrap; flex-shrink: 0; text-decoration: none; }
+        .topbar-brand { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 3px; color: #fff; white-space: nowrap; flex-shrink: 0; text-decoration: none; background: none; border: none; cursor: pointer; padding: 0; }
         .nav-pills { display: none; align-items: center; gap: 4px; flex: 1; justify-content: flex-end; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
         .nav-pills::-webkit-scrollbar { display: none; }
         .nav-pill { background: transparent; border: 1px solid transparent; color: #666; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1px; white-space: nowrap; transition: all 0.15s ease; text-decoration: none; display: inline-block; }
@@ -166,20 +262,24 @@ export default function App() {
 
       <div className="topbar">
         <div className="topbar-inner">
-          <NavLink to="/" className="topbar-brand" onClick={() => setMenuOpen(false)}>
+          <button
+            type="button"
+            className="topbar-brand"
+            onClick={() => goTo("simulator")}
+          >
             FINANCE TOOLS
-          </NavLink>
+          </button>
 
           <nav className="nav-pills" aria-label="Main navigation">
-            {NAV_ITEMS.map(({ path, short }) => (
-              <NavLink
-                key={path}
-                to={path}
-                end={path === "/"}
-                className={({ isActive }) => `nav-pill ${isActive ? "active" : ""}`}
+            {NAV_ITEMS.map(({ id, short }) => (
+              <button
+                key={id}
+                type="button"
+                className={`nav-pill ${page === id ? "active" : ""}`}
+                onClick={() => goTo(id)}
               >
                 {short}
-              </NavLink>
+              </button>
             ))}
           </nav>
 
@@ -200,20 +300,17 @@ export default function App() {
           <>
             <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
             <div className="mobile-menu" role="menu">
-              {NAV_ITEMS.map(({ path, label }) => (
-                <NavLink
-                  key={path}
-                  to={path}
-                  end={path === "/"}
+              {NAV_ITEMS.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
                   role="menuitem"
-                  className={({ isActive }) =>
-                    `mobile-menu-item ${isActive ? "active" : ""}`
-                  }
-                  onClick={() => setMenuOpen(false)}
+                  className={`mobile-menu-item ${page === id ? "active" : ""}`}
+                  onClick={() => goTo(id)}
                 >
                   <span className="dot" />
                   {label}
-                </NavLink>
+                </button>
               ))}
             </div>
           </>
@@ -239,17 +336,7 @@ export default function App() {
         </header>
 
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-          <Routes>
-            <Route path="/" element={<PortfolioSimulator />} />
-            <Route path="/compound-growth" element={<CompoundGrowth />} />
-            <Route path="/retirement-planner" element={<RetirementDrawdown />} />
-            <Route path="/yield-calculator" element={<PortfolioYield />} />
-            <Route path="/dynamic-withdrawal" element={<DynamicWithdrawal />} />
-            <Route path="/sp500-returns" element={<SP500Returns />} />
-            <Route path="/crypto-returns" element={<CryptoReturns />} />
-            <Route path="/usdghs-returns" element={<UsdGhsReturns />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <ActivePage />
         </div>
       </div>
     </div>
