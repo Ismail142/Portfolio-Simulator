@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import PortfolioSimulator from "./PortfolioSimulator";
 import CompoundGrowth from "./CompoundGrowth";
 import RetirementDrawdown from "./RetirementDrawdown";
@@ -21,60 +21,77 @@ type PageId =
 const PAGE_STORAGE_KEY = "finance-tools-active-page";
 const SCROLL_STORAGE_KEY = "finance-tools-scroll-positions";
 
-const NAV_ITEMS: { id: PageId; label: string; short: string }[] = [
-  { id: "simulator", label: "Portfolio Simulator", short: "SIMULATOR" },
-  { id: "compound-growth", label: "Compound Growth", short: "COMPOUND" },
-  { id: "retirement-planner", label: "Retirement Planner", short: "RETIREMENT" },
-  { id: "yield-calculator", label: "Yield Calculator", short: "YIELD" },
-  { id: "dynamic-withdrawal", label: "Dynamic Withdrawal", short: "DYNAMIC" },
-  { id: "sp500-returns", label: "S&P 500 Returns", short: "S&P 500" },
-  { id: "crypto-returns", label: "Crypto Returns", short: "CRYPTO" },
-  { id: "usdghs-returns", label: "USD/GHS Returns", short: "USD/GHS" },
+const NAV_GROUPS: {
+  label: string;
+  items: { id: PageId; label: string; short: string }[];
+}[] = [
+  {
+    label: "Planners",
+    items: [
+      { id: "simulator", label: "Portfolio Simulator", short: "Simulator" },
+      { id: "compound-growth", label: "Compound Growth", short: "Compound" },
+      { id: "retirement-planner", label: "Retirement Planner", short: "Retirement" },
+      { id: "yield-calculator", label: "Yield Calculator", short: "Yield" },
+      { id: "dynamic-withdrawal", label: "Dynamic Withdrawal", short: "Dynamic" },
+    ],
+  },
+  {
+    label: "Markets",
+    items: [
+      { id: "sp500-returns", label: "S&P 500 Returns", short: "S&P 500" },
+      { id: "crypto-returns", label: "Crypto Returns", short: "Crypto" },
+      { id: "usdghs-returns", label: "USD/GHS Returns", short: "USD/GHS" },
+    ],
+  },
 ];
 
-const PAGE_META: Record<PageId, { title: string; subtitle: string }> = {
+const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
+
+const PAGE_META: Record<PageId, { title: string; subtitle: string; group: string }> = {
   simulator: {
-    title: "PORTFOLIO SIMULATOR",
+    title: "Portfolio Simulator",
     subtitle:
-      "Choose % withdrawal or fixed monthly amount · monthly contributions included",
+      "Model percentage or fixed monthly withdrawals with optional contributions",
+    group: "Planners",
   },
   "compound-growth": {
-    title: "COMPOUND GROWTH",
-    subtitle:
-      "Calculate how your investment grows with compound interest and regular contributions",
+    title: "Compound Growth",
+    subtitle: "Project investment growth with regular contributions over time",
+    group: "Planners",
   },
   "retirement-planner": {
-    title: "RETIREMENT DRAWDOWN PLANNER",
-    subtitle:
-      "Solve for the exact monthly withdrawal that draws your portfolio to $0 at your life expectancy",
+    title: "Retirement Drawdown",
+    subtitle: "Solve for the monthly withdrawal that depletes the portfolio at life expectancy",
+    group: "Planners",
   },
   "yield-calculator": {
-    title: "PORTFOLIO YIELD CALCULATOR",
-    subtitle:
-      "Enter USD or GHS value · see monthly and annual yield at 4–8% · live currency conversion",
+    title: "Yield Calculator",
+    subtitle: "Estimate monthly and annual income at 4–8% · USD & GHS",
+    group: "Planners",
   },
   "dynamic-withdrawal": {
-    title: "DYNAMIC WITHDRAWAL SIMULATOR",
-    subtitle: `Test dynamic withdrawal against real S&P 500 returns 1926–${new Date().getFullYear()} · USD & GHS`,
+    title: "Dynamic Withdrawal",
+    subtitle: `Backtest withdrawal rates against S&P 500 returns · 1926–${new Date().getFullYear()}`,
+    group: "Planners",
   },
   "sp500-returns": {
-    title: "S&P 500 RETURNS",
-    subtitle:
-      "Choose any window length · rolling CAGRs · annual return distributions · best / median / worst periods",
+    title: "S&P 500 Returns",
+    subtitle: "Rolling CAGRs, return distributions, and best / median / worst windows",
+    group: "Markets",
   },
   "crypto-returns": {
-    title: "CRYPTO RETURNS",
-    subtitle:
-      "Bitcoin annual returns · choose any window length · rolling CAGRs · best / median / worst periods",
+    title: "Crypto Returns",
+    subtitle: "Bitcoin annual returns · rolling windows and extreme periods",
+    group: "Markets",
   },
   "usdghs-returns": {
-    title: "USD/GHS RETURNS",
-    subtitle:
-      "USD to GHS exchange-rate annual returns · choose any window length · rolling CAGRs · best / median / worst periods",
+    title: "USD / GHS Returns",
+    subtitle: "Exchange-rate annual returns · rolling windows and extremes",
+    group: "Markets",
   },
 };
 
-const PAGE_COMPONENTS: Record<PageId, React.ComponentType> = {
+const PAGE_COMPONENTS: Record<PageId, ComponentType> = {
   simulator: PortfolioSimulator,
   "compound-growth": CompoundGrowth,
   "retirement-planner": RetirementDrawdown,
@@ -115,6 +132,7 @@ function loadScrollPositions(): Record<string, number> {
 export default function App() {
   const [page, setPage] = useState<PageId>(loadInitialPage);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [contentKey, setContentKey] = useState(0);
   const scrollPositions = useRef<Record<string, number>>(loadScrollPositions());
   const prevPageRef = useRef<PageId>(page);
   const meta = PAGE_META[page];
@@ -129,7 +147,6 @@ export default function App() {
     }
   }, []);
 
-  // Persist active page
   useEffect(() => {
     try {
       window.localStorage.setItem(PAGE_STORAGE_KEY, page);
@@ -138,7 +155,6 @@ export default function App() {
     }
   }, [page]);
 
-  // Save/restore scroll when switching pages
   useEffect(() => {
     const prev = prevPageRef.current;
     if (prev !== page) {
@@ -152,6 +168,7 @@ export default function App() {
         /* ignore */
       }
       prevPageRef.current = page;
+      setContentKey((k) => k + 1);
     }
     const y = scrollPositions.current[page] ?? 0;
     const id = window.requestAnimationFrame(() => {
@@ -160,7 +177,6 @@ export default function App() {
     return () => window.cancelAnimationFrame(id);
   }, [page]);
 
-  // Persist scroll on leave / hide (refresh, tab close, background)
   useEffect(() => {
     const persist = () => {
       scrollPositions.current[prevPageRef.current] = window.scrollY;
@@ -174,16 +190,38 @@ export default function App() {
         /* ignore */
       }
     };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") persist();
+    };
     window.addEventListener("pagehide", persist);
     window.addEventListener("beforeunload", persist);
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "hidden") persist();
-    });
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       window.removeEventListener("pagehide", persist);
       window.removeEventListener("beforeunload", persist);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
+
+  // Close mobile menu on Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  // Lock body scroll when mobile menu open
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [menuOpen]);
 
   const goTo = (id: PageId) => {
     setPage(id);
@@ -191,95 +229,312 @@ export default function App() {
   };
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#070710",
-        color: "#e6e6f0",
-        fontFamily: "'DM Mono', monospace",
-      }}
-    >
+    <div className="app-shell">
       <style>{`
-        .rate-btn { border: 1px solid #333; background: transparent; color: #666; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 13px; transition: all 0.15s; }
-        .rate-btn.active { border-color: currentColor; background: #ffffff12; }
-        .stat-card { background: #0e0e18; border: 1px solid #1a1a28; border-radius: 10px; padding: 16px; }
-        .stat-label { font-size: 11px; color: #666; letter-spacing: 1.5px; margin-bottom: 6px; }
-        .stat-value { font-size: 22px; color: #00ff87; font-weight: 500; }
-        .chart-card { background: #0e0e18; border: 1px solid #1a1a28; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-        .chart-title { font-size: 12px; color: #888; letter-spacing: 2px; margin-bottom: 16px; }
-        .slider-wrap { display: flex; flex-direction: column; gap: 8px; }
-        .slider-label { display: flex; justify-content: space-between; font-size: 12px; color: #888; letter-spacing: 1px; }
-        .slider-val { color: #00ff87; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; color: #666; font-weight: 400; letter-spacing: 1px; font-size: 11px; padding: 10px 12px; border-bottom: 1px solid #1a1a28; }
-        td { padding: 12px; border-bottom: 1px solid #14141c; }
-        .num-input { width: 100%; background: #07070d; border: 1px solid #1a1a28; color: #00ff87; font-family: 'DM Mono', monospace; font-size: 15px; padding: 8px 10px; border-radius: 6px; outline: none; text-align: right; }
-        .num-input:focus { border-color: #00ff87; box-shadow: 0 0 0 2px #00ff8722; }
-        .num-input::-webkit-outer-spin-button, .num-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        .num-input[type=number] { -moz-appearance: textfield; }
-        .calc-bar { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
-        .calc-hint { font-size: 12px; color: #ffbe0b; letter-spacing: 0.5px; }
-        .calc-btn { background: #00ff87; color: #050510; border: none; padding: 12px 28px; border-radius: 8px; font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 3px; cursor: pointer; box-shadow: 0 0 20px #00ff8744; transition: all 0.15s; }
-        .calc-btn:hover:not(:disabled) { background: #00ffa3; box-shadow: 0 0 28px #00ff8788; }
-        .calc-btn:disabled { background: #1a1a28; color: #555; cursor: not-allowed; box-shadow: none; }
-        .mode-switch { display: inline-flex; border: 1px solid #1a1a28; border-radius: 8px; overflow: hidden; background: #0e0e18; }
-        .mode-btn { background: transparent; color: #666; border: none; padding: 10px 18px; font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 1.5px; cursor: pointer; transition: all 0.15s; }
-        .mode-btn.active { background: #00ff8722; color: #00ff87; }
-        .topbar { position: sticky; top: 0; z-index: 50; background: rgba(7,7,16,0.85); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid #1a1a28; }
-        .topbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; height: 56px; gap: 12px; }
-        .topbar-brand { font-family: 'Bebas Neue', sans-serif; font-size: 17px; letter-spacing: 3px; color: #fff; white-space: nowrap; flex-shrink: 0; text-decoration: none; background: none; border: none; cursor: pointer; padding: 0; }
-        .nav-pills { display: none; align-items: center; gap: 4px; flex: 1; justify-content: flex-end; overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+        .app-shell {
+          min-height: 100vh;
+          background:
+            radial-gradient(ellipse 80% 50% at 50% -20%, #0a1a14 0%, transparent 55%),
+            var(--app-bg);
+          color: var(--app-text);
+          font-family: var(--app-font-mono);
+        }
+
+        .topbar {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          height: var(--app-topbar-h);
+          background: rgba(7, 7, 16, 0.78);
+          backdrop-filter: blur(18px) saturate(1.2);
+          -webkit-backdrop-filter: blur(18px) saturate(1.2);
+          border-bottom: 1px solid var(--app-border);
+        }
+        .topbar-inner {
+          max-width: var(--app-max);
+          margin: 0 auto;
+          padding: 0 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          height: 100%;
+          gap: 12px;
+        }
+        .topbar-brand {
+          font-family: var(--app-font-display);
+          font-size: 18px;
+          letter-spacing: 3px;
+          color: #fff;
+          white-space: nowrap;
+          flex-shrink: 0;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 6px 0;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          transition: color 0.15s ease;
+        }
+        .topbar-brand:hover { color: var(--app-accent); }
+        .brand-mark {
+          width: 8px;
+          height: 8px;
+          border-radius: 2px;
+          background: var(--app-accent);
+          box-shadow: 0 0 12px var(--app-accent-glow);
+          flex-shrink: 0;
+        }
+
+        .nav-pills {
+          display: none;
+          align-items: center;
+          gap: 2px;
+          flex: 1;
+          justify-content: flex-end;
+          overflow-x: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+        }
         .nav-pills::-webkit-scrollbar { display: none; }
-        .nav-pill { background: transparent; border: 1px solid transparent; color: #666; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1px; white-space: nowrap; transition: all 0.15s ease; text-decoration: none; display: inline-block; }
-        .nav-pill:hover { color: #ccc; background: #ffffff08; border-color: #222; }
-        .nav-pill.active { color: #00ff87; background: #00ff8714; border-color: #00ff8744; box-shadow: 0 0 12px #00ff8718; }
-        .hamburger { display: flex; flex-direction: column; justify-content: center; gap: 5px; background: transparent; border: 1px solid #1a1a28; border-radius: 8px; cursor: pointer; padding: 10px; flex-shrink: 0; transition: border-color 0.15s; }
-        .hamburger:hover { border-color: #333; }
-        .hamburger span { display: block; width: 18px; height: 2px; background: #aaa; border-radius: 2px; transition: all 0.25s ease; }
-        .hamburger.open { border-color: #00ff87; }
-        .hamburger.open span { background: #00ff87; }
+        .nav-group {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .nav-divider {
+          width: 1px;
+          height: 20px;
+          background: var(--app-border);
+          margin: 0 8px;
+          flex-shrink: 0;
+        }
+        .nav-pill {
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--app-text-dim);
+          padding: 7px 11px;
+          min-height: 36px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-family: var(--app-font-mono);
+          font-size: 11px;
+          letter-spacing: 0.6px;
+          white-space: nowrap;
+          transition: all 0.15s ease;
+        }
+        .nav-pill:hover {
+          color: #ccc;
+          background: #ffffff08;
+          border-color: #222;
+        }
+        .nav-pill.active {
+          color: var(--app-accent);
+          background: var(--app-accent-dim);
+          border-color: #00ff8744;
+          box-shadow: 0 0 12px #00ff8718;
+        }
+
+        .hamburger {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 5px;
+          background: transparent;
+          border: 1px solid var(--app-border);
+          border-radius: 8px;
+          cursor: pointer;
+          padding: 11px;
+          flex-shrink: 0;
+          transition: border-color 0.15s, background 0.15s;
+          min-width: 42px;
+          min-height: 42px;
+        }
+        .hamburger:hover { border-color: #333; background: #ffffff06; }
+        .hamburger span {
+          display: block;
+          width: 18px;
+          height: 2px;
+          background: #aaa;
+          border-radius: 2px;
+          transition: all 0.25s ease;
+        }
+        .hamburger.open { border-color: var(--app-accent); }
+        .hamburger.open span { background: var(--app-accent); }
         .hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
         .hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
         .hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-        .mobile-menu { display: block; position: absolute; top: 56px; left: 0; right: 0; background: #0c0c14; border-bottom: 1px solid #1a1a28; z-index: 49; box-shadow: 0 12px 40px rgba(0,0,0,0.45); animation: menuSlide 0.2s ease; }
-        @keyframes menuSlide { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
-        .mobile-menu-item { display: flex; align-items: center; width: 100%; background: transparent; border: none; color: #888; padding: 16px 24px; font-family: 'DM Mono', monospace; font-size: 13px; letter-spacing: 1.5px; cursor: pointer; text-align: left; transition: all 0.15s; text-decoration: none; }
-        .mobile-menu-item.active { color: #00ff87; background: linear-gradient(90deg, #00ff8712 0%, transparent 100%); }
-        .mobile-menu-item:hover:not(.active) { color: #ccc; background: #ffffff06; }
-        .mobile-menu-item .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 14px; opacity: 0.5; flex-shrink: 0; }
-        .mobile-menu-item.active .dot { opacity: 1; box-shadow: 0 0 8px currentColor; }
-        .menu-backdrop { position: fixed; inset: 0; top: 56px; background: rgba(0,0,0,0.4); z-index: 48; }
-        @media (min-width: 900px) {
+
+        .menu-backdrop {
+          position: fixed;
+          inset: 0;
+          top: var(--app-topbar-h);
+          background: rgba(0, 0, 0, 0.55);
+          z-index: 48;
+          animation: fadeIn 0.18s ease;
+        }
+        .mobile-menu {
+          position: absolute;
+          top: var(--app-topbar-h);
+          left: 0;
+          right: 0;
+          max-height: min(72vh, 520px);
+          overflow-y: auto;
+          background: var(--app-bg-elevated);
+          border-bottom: 1px solid var(--app-border);
+          z-index: 49;
+          box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+          animation: menuSlide 0.2s ease;
+          padding: 8px 0 16px;
+        }
+        @keyframes menuSlide {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes pageIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .mobile-group-label {
+          font-size: 10px;
+          letter-spacing: 2px;
+          color: var(--app-text-dim);
+          text-transform: uppercase;
+          padding: 14px 24px 6px;
+        }
+        .mobile-menu-item {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          background: transparent;
+          border: none;
+          color: #888;
+          padding: 14px 24px;
+          min-height: 48px;
+          font-family: var(--app-font-mono);
+          font-size: 14px;
+          letter-spacing: 0.8px;
+          cursor: pointer;
+          text-align: left;
+          transition: all 0.15s;
+        }
+        .mobile-menu-item.active {
+          color: var(--app-accent);
+          background: linear-gradient(90deg, #00ff8712 0%, transparent 100%);
+        }
+        .mobile-menu-item:hover:not(.active) {
+          color: #ccc;
+          background: #ffffff06;
+        }
+        .mobile-menu-item .dot {
+          display: inline-block;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: currentColor;
+          margin-right: 14px;
+          opacity: 0.45;
+          flex-shrink: 0;
+        }
+        .mobile-menu-item.active .dot {
+          opacity: 1;
+          box-shadow: 0 0 8px currentColor;
+        }
+
+        .page-wrap {
+          padding: 28px 20px 80px;
+        }
+        .page-header {
+          max-width: var(--app-max);
+          margin: 0 auto 28px;
+        }
+        .page-eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          letter-spacing: 2px;
+          color: var(--app-text-dim);
+          text-transform: uppercase;
+          margin-bottom: 10px;
+        }
+        .page-eyebrow-dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: var(--app-accent);
+          opacity: 0.8;
+        }
+        .page-title {
+          font-family: var(--app-font-display);
+          font-size: clamp(30px, 5vw, 46px);
+          letter-spacing: 2.5px;
+          margin: 0;
+          color: #fff;
+          line-height: 1.05;
+          font-weight: 400;
+        }
+        .page-subtitle {
+          color: var(--app-text-muted);
+          margin: 10px 0 0;
+          font-size: 13px;
+          line-height: 1.55;
+          max-width: 54ch;
+        }
+        .page-content {
+          max-width: var(--app-max);
+          margin: 0 auto;
+        }
+        .page-enter {
+          animation: pageIn 0.28s ease both;
+        }
+
+        @media (min-width: 960px) {
           .nav-pills { display: flex; }
           .hamburger { display: none; }
           .mobile-menu, .menu-backdrop { display: none !important; }
           .topbar-inner { padding: 0 24px; }
+          .page-wrap { padding: 36px 24px 96px; }
         }
         @media (min-width: 1100px) {
-          .nav-pill { font-size: 12px; padding: 8px 14px; letter-spacing: 1.2px; }
+          .nav-pill { font-size: 12px; padding: 8px 13px; }
         }
       `}</style>
 
-      <div className="topbar">
+      <header className="topbar">
         <div className="topbar-inner">
           <button
             type="button"
             className="topbar-brand"
             onClick={() => goTo("simulator")}
+            aria-label="Finance Tools home"
           >
+            <span className="brand-mark" aria-hidden />
             FINANCE TOOLS
           </button>
 
           <nav className="nav-pills" aria-label="Main navigation">
-            {NAV_ITEMS.map(({ id, short }) => (
-              <button
-                key={id}
-                type="button"
-                className={`nav-pill ${page === id ? "active" : ""}`}
-                onClick={() => goTo(id)}
-              >
-                {short}
-              </button>
+            {NAV_GROUPS.map((group, gi) => (
+              <div key={group.label} className="nav-group">
+                {gi > 0 && <span className="nav-divider" aria-hidden />}
+                {group.items.map(({ id, short, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`nav-pill ${page === id ? "active" : ""}`}
+                    onClick={() => goTo(id)}
+                    title={label}
+                    aria-current={page === id ? "page" : undefined}
+                  >
+                    {short}
+                  </button>
+                ))}
+              </div>
             ))}
           </nav>
 
@@ -287,7 +542,7 @@ export default function App() {
             type="button"
             className={`hamburger ${menuOpen ? "open" : ""}`}
             onClick={() => setMenuOpen((o) => !o)}
-            aria-label="Toggle menu"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
             aria-expanded={menuOpen}
           >
             <span />
@@ -298,47 +553,49 @@ export default function App() {
 
         {menuOpen && (
           <>
-            <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
-            <div className="mobile-menu" role="menu">
-              {NAV_ITEMS.map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="menuitem"
-                  className={`mobile-menu-item ${page === id ? "active" : ""}`}
-                  onClick={() => goTo(id)}
-                >
-                  <span className="dot" />
-                  {label}
-                </button>
+            <div
+              className="menu-backdrop"
+              onClick={() => setMenuOpen(false)}
+              aria-hidden
+            />
+            <div className="mobile-menu" role="menu" aria-label="Tools">
+              {NAV_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <div className="mobile-group-label">{group.label}</div>
+                  {group.items.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="menuitem"
+                      className={`mobile-menu-item ${page === id ? "active" : ""}`}
+                      onClick={() => goTo(id)}
+                      aria-current={page === id ? "page" : undefined}
+                    >
+                      <span className="dot" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </>
         )}
-      </div>
+      </header>
 
-      <div style={{ padding: "32px 24px 64px" }}>
-        <header style={{ maxWidth: 1200, margin: "0 auto 24px" }}>
-          <h1
-            style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: "clamp(32px, 4vw, 50px)",
-              letterSpacing: 4,
-              margin: 0,
-              color: "#fff",
-            }}
-          >
-            {meta.title}
-          </h1>
-          <p style={{ color: "#777", margin: "4px 0 0", fontSize: 13 }}>
-            {meta.subtitle}
-          </p>
+      <main className="page-wrap">
+        <header className="page-header">
+          <div className="page-eyebrow">
+            <span className="page-eyebrow-dot" aria-hidden />
+            {meta.group}
+          </div>
+          <h1 className="page-title">{meta.title}</h1>
+          <p className="page-subtitle">{meta.subtitle}</p>
         </header>
 
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <div className="page-content page-enter" key={contentKey}>
           <ActivePage />
         </div>
-      </div>
+      </main>
     </div>
   );
 }
