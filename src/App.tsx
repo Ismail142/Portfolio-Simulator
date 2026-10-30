@@ -7,6 +7,7 @@ import PortfolioYield from "./PortfolioYield";
 import DynamicWithdrawal from "./DynamicWithdrawal";
 import SP500Returns from "./SP500Returns";
 import CryptoReturns from "./CryptoReturns";
+import UsdGhsReturns from "./UsdGhsReturns";
 
 const NAV_ITEMS: { path: string; label: string; short: string }[] = [
   { path: "/", label: "Portfolio Simulator", short: "SIMULATOR" },
@@ -16,6 +17,7 @@ const NAV_ITEMS: { path: string; label: string; short: string }[] = [
   { path: "/dynamic-withdrawal", label: "Dynamic Withdrawal", short: "DYNAMIC" },
   { path: "/sp500-returns", label: "S&P 500 Returns", short: "S&P 500" },
   { path: "/crypto-returns", label: "Crypto Returns", short: "CRYPTO" },
+  { path: "/usdghs-returns", label: "USD/GHS Returns", short: "USD/GHS" },
 ];
 
 const PAGE_META: Record<string, { title: string; subtitle: string }> = {
@@ -52,6 +54,11 @@ const PAGE_META: Record<string, { title: string; subtitle: string }> = {
     title: "CRYPTO RETURNS",
     subtitle:
       "Bitcoin annual returns · choose any window length · rolling CAGRs · best / median / worst periods",
+  },
+  "/usdghs-returns": {
+    title: "USD/GHS RETURNS",
+    subtitle:
+      "USD to GHS exchange-rate annual returns · choose any window length · rolling CAGRs · best / median / worst periods",
   },
 };
 
@@ -213,6 +220,7 @@ export default function App() {
             <Route path="/dynamic-withdrawal" element={<DynamicWithdrawal />} />
             <Route path="/sp500-returns" element={<SP500Returns />} />
             <Route path="/crypto-returns" element={<CryptoReturns />} />
+            <Route path="/usdghs-returns" element={<UsdGhsReturns />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>
