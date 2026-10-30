@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import PortfolioSimulator from "./PortfolioSimulator";
 import CompoundGrowth from "./CompoundGrowth";
@@ -66,6 +66,33 @@ export default function App() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const meta = PAGE_META[location.pathname] ?? PAGE_META["/"];
+
+  // Per-route scroll memory: each path restores the Y it had when last visited
+  const scrollPositions = useRef<Record<string, number>>({});
+  const prevPathRef = useRef(location.pathname);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.history.scrollRestoration = "manual";
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    const prevPath = prevPathRef.current;
+    if (prevPath !== location.pathname) {
+      scrollPositions.current[prevPath] = window.scrollY;
+      prevPathRef.current = location.pathname;
+    }
+    const y = scrollPositions.current[location.pathname] ?? 0;
+    // Restore after paint so layout height is ready
+    const id = window.requestAnimationFrame(() => {
+      window.scrollTo(0, y);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [location.pathname]);
 
   return (
     <div
