@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentType } from "react";
-import PortfolioSimulator from "./PortfolioSimulator";
+import PortfolioLongevity from "./PortfolioLongevity";
 import CompoundGrowth from "./CompoundGrowth";
 import RetirementDrawdown from "./RetirementDrawdown";
 import PortfolioYield from "./PortfolioYield";
@@ -9,7 +9,7 @@ import CryptoReturns from "./CryptoReturns";
 import UsdGhsReturns from "./UsdGhsReturns";
 
 type PageId =
-  | "simulator"
+  | "portfolio-longevity"
   | "compound-growth"
   | "retirement-planner"
   | "yield-calculator"
@@ -28,7 +28,7 @@ const NAV_GROUPS: {
   {
     label: "Planners",
     items: [
-      { id: "simulator", label: "Portfolio Simulator", short: "Simulator" },
+      { id: "portfolio-longevity", label: "Portfolio Longevity", short: "Longevity" },
       { id: "compound-growth", label: "Compound Growth", short: "Compound" },
       { id: "retirement-planner", label: "Retirement Planner", short: "Retirement" },
       { id: "yield-calculator", label: "Yield Calculator", short: "Yield" },
@@ -48,10 +48,9 @@ const NAV_GROUPS: {
 const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
 
 const PAGE_META: Record<PageId, { title: string; subtitle: string; group: string }> = {
-  simulator: {
-    title: "Portfolio Simulator",
-    subtitle:
-      "Model percentage or fixed monthly withdrawals with optional contributions",
+  "portfolio-longevity": {
+    title: "Portfolio Longevity",
+    subtitle: "See how long your portfolio will last with a fixed monthly withdrawal",
     group: "Planners",
   },
   "compound-growth": {
@@ -92,7 +91,7 @@ const PAGE_META: Record<PageId, { title: string; subtitle: string; group: string
 };
 
 const PAGE_COMPONENTS: Record<PageId, ComponentType> = {
-  simulator: PortfolioSimulator,
+  "portfolio-longevity": PortfolioLongevity,
   "compound-growth": CompoundGrowth,
   "retirement-planner": RetirementDrawdown,
   "yield-calculator": PortfolioYield,
@@ -107,14 +106,14 @@ function isPageId(value: unknown): value is PageId {
 }
 
 function loadInitialPage(): PageId {
-  if (typeof window === "undefined") return "simulator";
+  if (typeof window === "undefined") return "portfolio-longevity";
   try {
     const raw = window.localStorage.getItem(PAGE_STORAGE_KEY);
     if (isPageId(raw)) return raw;
   } catch {
     /* ignore */
   }
-  return "simulator";
+  return "portfolio-longevity";
 }
 
 function loadScrollPositions(): Record<string, number> {
@@ -511,7 +510,7 @@ export default function App() {
           <button
             type="button"
             className="topbar-brand"
-            onClick={() => goTo("simulator")}
+            onClick={() => goTo("portfolio-longevity")}
             aria-label="Finance Tools home"
           >
             <span className="brand-mark" aria-hidden />
