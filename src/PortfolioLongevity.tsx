@@ -16,15 +16,15 @@ const fmt = (n: number) =>
   n >= 1_000_000
     ? `$${(n / 1_000_000).toFixed(2)}M`
     : n >= 1000
-      ? `$${(n / 1000).toFixed(1)}K`
-      : `$${n.toFixed(0)}`;
+      ? `$${(n / 1000).toFixed(2)}K`
+      : `$${n.toFixed(2)}`;
 
 const fmtFull = (n: number) =>
   n.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 
 type SimPoint = { year: number; value: number };
@@ -125,7 +125,7 @@ function simulateLongevity(
     depleted,
     sustainable,
     data,
-    totalWithdrawn: Math.round(totalWithdrawn),
+    totalWithdrawn: Math.round(totalWithdrawn * 100) / 100,
   };
 }
 
@@ -216,6 +216,14 @@ export default function PortfolioLongevity() {
     [portfolio, annualReturn, monthlyWithdrawal],
   );
 
+  // Max monthly withdrawal that preserves principal forever (grow-then-withdraw)
+  const sustainableMonthly = useMemo(() => {
+    if (portfolio <= 0) return 0;
+    const monthlyRate = annualReturn / 100 / 12;
+    if (monthlyRate <= 0) return 0;
+    return Math.round(portfolio * monthlyRate * 100) / 100;
+  }, [portfolio, annualReturn]);
+
   const durationLabel = result.sustainable
     ? "100+ years"
     : result.months === 0
@@ -270,6 +278,39 @@ export default function PortfolioLongevity() {
           font-size: 14px;
           color: rgba(255,255,255,0.55);
           font-family: "DM Mono", monospace;
+        }
+        .longevity-forever {
+          background: rgba(0, 212, 255, 0.06);
+          border: 1px solid rgba(0, 212, 255, 0.22);
+          border-radius: 12px;
+          padding: 20px 28px;
+          margin-bottom: 28px;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px 24px;
+        }
+        .longevity-forever-label {
+          font-size: 12px;
+          letter-spacing: 0.07em;
+          text-transform: uppercase;
+          color: rgba(255,255,255,0.45);
+          font-family: "DM Mono", monospace;
+          margin-bottom: 4px;
+        }
+        .longevity-forever-value {
+          font-size: 1.5rem;
+          color: #00d4ff;
+          font-family: "DM Mono", monospace;
+          font-weight: 500;
+        }
+        .longevity-forever-hint {
+          font-size: 13px;
+          color: rgba(255,255,255,0.45);
+          font-family: "DM Mono", monospace;
+          max-width: 320px;
+          line-height: 1.45;
         }
         .longevity-stats {
           display: grid;
@@ -395,6 +436,21 @@ export default function PortfolioLongevity() {
         <div className="longevity-result-label">Portfolio will last</div>
         <div className="longevity-result-value">{durationLabel}</div>
         <div className="longevity-result-sub">{statusText}</div>
+      </div>
+
+      {/* Forever / sustainable withdrawal */}
+      <div className="longevity-forever">
+        <div>
+          <div className="longevity-forever-label">Survives forever at</div>
+          <div className="longevity-forever-value">
+            {sustainableMonthly > 0 ? `${fmtFull(sustainableMonthly)} / mo` : "—"}
+          </div>
+        </div>
+        <div className="longevity-forever-hint">
+          {sustainableMonthly > 0
+            ? "Max monthly withdrawal that preserves your principal at the assumed return."
+            : "Enter a positive portfolio value and return to see the forever amount."}
+        </div>
       </div>
 
       {/* Summary stats */}
