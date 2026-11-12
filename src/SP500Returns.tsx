@@ -429,9 +429,16 @@ export default function SP500Returns() {
               fontSize: 12,
               color: "#888",
               letterSpacing: 0.5,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              gap: 12,
             }}
           >
-            PORTFOLIO (USD) · FOR INCOME
+            <span>PORTFOLIO (USD) · FOR INCOME</span>
+            <span style={{ color: "#00ff87", fontFamily: "'DM Mono', monospace", fontSize: 13 }}>
+              {fmtMoney(Number(draftPortfolio) || 0)}
+            </span>
           </label>
           <input
             type="number"
