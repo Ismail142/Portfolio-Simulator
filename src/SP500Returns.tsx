@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { RETURNS } from "./data/historicalReturns";
+import { WITHDRAWAL_RATES as RATES, RATE_COLORS, RATES_LABEL } from "./data/rates";
 
 const YEARS = Object.keys(RETURNS)
   .map(Number)
@@ -68,6 +69,67 @@ function buildPeriods(window: number): PeriodStat[] {
 
 const fmtPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 const fmtMult = (n: number) => `${n.toFixed(2)}×`;
+
+const fmtMoney = (n: number) =>
+  n >= 1_000_000
+    ? `$${(n / 1_000_000).toFixed(2)}M`
+    : n >= 1000
+      ? `$${(n / 1000).toFixed(2)}K`
+      : `$${n.toFixed(2)}`;
+
+type SimYear = {
+  year: number;
+  calendarYear: number;
+  portfolioBefore: number;
+  withdrawal: number;
+  portfolioAfter: number;
+  annualReturn: number;
+};
+
+/** Dynamic % withdrawal: each year take rate% of current portfolio, then apply that year's return. */
+function simulateWithdrawal(
+  initialPortfolio: number,
+  withdrawalRate: number,
+  startYear: number,
+  endYear: number,
+): SimYear[] {
+  const retirementYears = endYear - startYear + 1;
+  const result: SimYear[] = [];
+  let portfolio = initialPortfolio;
+
+  result.push({
+    year: 0,
+    calendarYear: startYear,
+    portfolioBefore: portfolio,
+    withdrawal: 0,
+    portfolioAfter: portfolio,
+    annualReturn: 0,
+  });
+
+  for (let y = 1; y <= retirementYears; y++) {
+    const calendarYear = startYear + y - 1;
+    const annualReturn = RETURNS[calendarYear] ?? 0;
+    const portfolioBefore = portfolio;
+    const withdrawal = portfolioBefore * (withdrawalRate / 100);
+    const afterWithdrawal = portfolioBefore - withdrawal;
+    portfolio = afterWithdrawal * (1 + annualReturn / 100);
+    result.push({
+      year: y,
+      calendarYear,
+      portfolioBefore: Math.round(portfolioBefore * 100) / 100,
+      withdrawal: Math.round(withdrawal * 100) / 100,
+      portfolioAfter: Math.round(portfolio * 100) / 100,
+      annualReturn,
+    });
+  }
+  return result;
+}
+
+function avgMonthlyWithdrawal(sim: SimYear[]): number {
+  const rows = sim.slice(1);
+  if (rows.length === 0) return 0;
+  return rows.reduce((sum, d) => sum + d.withdrawal, 0) / rows.length / 12;
+}
 
 type TipPayload = { name?: string; value?: number; color?: string; payload?: Record<string, unknown> };
 
@@ -126,21 +188,35 @@ function buildBins(returns: number[]) {
   return bins;
 }
 
+const PORTFOLIO_STORAGE_KEY = "sp500-returns-portfolio";
+
 export default function SP500Returns() {
   const [draftDuration, setDraftDuration] = useState<number | "">(30);
   const [duration, setDuration] = useState(30);
   const [selectedStart, setSelectedStart] = useState(1950);
+  const [draftPortfolio, setDraftPortfolio] = useState<number | "">(500000);
+  const [portfolio, setPortfolio] = useState(500000);
 
-  // Restore saved duration on mount
+  // Restore saved duration + portfolio on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const n = Math.floor(Number(raw));
-      if (!Number.isFinite(n) || n < 1 || n > MAX_DURATION) return;
-      setDraftDuration(n);
-      setDuration(n);
+      if (raw) {
+        const n = Math.floor(Number(raw));
+        if (Number.isFinite(n) && n >= 1 && n <= MAX_DURATION) {
+          setDraftDuration(n);
+          setDuration(n);
+        }
+      }
+      const rawP = window.localStorage.getItem(PORTFOLIO_STORAGE_KEY);
+      if (rawP) {
+        const p = Math.floor(Number(rawP));
+        if (Number.isFinite(p) && p >= 1) {
+          setDraftPortfolio(p);
+          setPortfolio(p);
+        }
+      }
     } catch {
       /* ignore */
     }
@@ -182,6 +258,34 @@ export default function SP500Returns() {
     };
   }, []);
 
+  /** Best / median / worst CAGR windows + all-time: which withdrawal rate yields the highest avg monthly income. */
+  const regimeAnalysis = useMemo(() => {
+    if (!best || !median || !worst) return null;
+
+    type RegimeKey = "best" | "median" | "worst" | "allTime";
+    const regimes: { key: RegimeKey; label: string; start: number; end: number; cagr: number }[] = [
+      { key: "best", label: "Best window", start: best.start, end: best.end, cagr: best.cagr },
+      { key: "median", label: "Median window", start: median.start, end: median.end, cagr: median.cagr },
+      { key: "worst", label: "Worst window", start: worst.start, end: worst.end, cagr: worst.cagr },
+      { key: "allTime", label: "All-time", start: allTime.start, end: allTime.end, cagr: allTime.cagr },
+    ];
+
+    return regimes.map((reg) => {
+      const byRate = RATES.map((rate) => {
+        const data = simulateWithdrawal(portfolio, rate, reg.start, reg.end);
+        return {
+          rate,
+          avgMonthly: avgMonthlyWithdrawal(data),
+          finalBalance: data[data.length - 1]?.portfolioAfter ?? 0,
+        };
+      });
+      const winner = byRate.reduce((bestRow, cur) =>
+        cur.avgMonthly > bestRow.avgMonthly ? cur : bestRow,
+      );
+      return { ...reg, byRate, winner };
+    });
+  }, [best, median, worst, allTime, portfolio]);
+
   const selected = useMemo(
     () => allPeriods.find((p) => p.start === selectedStart) ?? allPeriods[0],
     [allPeriods, selectedStart],
@@ -217,7 +321,8 @@ export default function SP500Returns() {
   const positiveCount = selected ? selected.returns.filter((r) => r >= 0).length : 0;
   const negativeCount = selected ? selected.returns.length - positiveCount : 0;
 
-  const isDirty = Number(draftDuration) !== duration;
+  const isDirty =
+    Number(draftDuration) !== duration || Number(draftPortfolio) !== portfolio;
 
   const handleCalculate = () => {
     let n = Math.floor(Number(draftDuration) || 30);
@@ -225,8 +330,15 @@ export default function SP500Returns() {
     if (n > MAX_DURATION) n = MAX_DURATION;
     setDraftDuration(n);
     setDuration(n);
+
+    let p = Math.floor(Number(draftPortfolio) || 500000);
+    if (!Number.isFinite(p) || p < 1) p = 1;
+    setDraftPortfolio(p);
+    setPortfolio(p);
+
     try {
       window.localStorage.setItem(STORAGE_KEY, String(n));
+      window.localStorage.setItem(PORTFOLIO_STORAGE_KEY, String(p));
     } catch {
       /* ignore */
     }
@@ -308,6 +420,58 @@ export default function SP500Returns() {
           />
           <span style={{ fontSize: 11, color: "#555" }}>
             1 – {MAX_DURATION} (data {MIN_YEAR}–{MAX_YEAR})
+          </span>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 180 }}>
+          <label
+            style={{
+              fontSize: 12,
+              color: "#888",
+              letterSpacing: 0.5,
+            }}
+          >
+            PORTFOLIO (USD) · FOR INCOME
+          </label>
+          <input
+            type="number"
+            className="num-input"
+            min={1}
+            step={10000}
+            value={draftPortfolio}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "") {
+                setDraftPortfolio("");
+                return;
+              }
+              const n = Math.floor(Number(v));
+              if (!Number.isFinite(n)) return;
+              setDraftPortfolio(n);
+            }}
+            style={{
+              width: 160,
+              background: "#07070d",
+              border: "1px solid #1a1a28",
+              color: "#00ff87",
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 15,
+              padding: "8px 10px",
+              borderRadius: 6,
+              outline: "none",
+              textAlign: "right",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "#00ff87";
+              e.currentTarget.style.boxShadow = "0 0 0 2px #00ff8722";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = "#1a1a28";
+              e.currentTarget.style.boxShadow = "none";
+            }}
+          />
+          <span style={{ fontSize: 11, color: "#555" }}>
+            Used for dynamic withdrawal income
           </span>
         </div>
 
@@ -439,6 +603,155 @@ export default function SP500Returns() {
           </div>
         ))}
       </div>
+
+      {/* Best income by market regime (dynamic withdrawal) */}
+      {regimeAnalysis && (
+        <div
+          className="section"
+          style={{
+            background: "#0a0a14",
+            border: "1px solid #15151f",
+            borderRadius: 14,
+            padding: 22,
+            marginBottom: 22,
+          }}
+        >
+          <h2
+            style={{
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 14,
+              letterSpacing: 3,
+              color: "#888",
+              margin: "0 0 6px",
+            }}
+          >
+            BEST INCOME BY MARKET REGIME · {duration}-YR WINDOWS
+          </h2>
+          <p style={{ color: "#666", fontSize: 12, margin: "0 0 16px", lineHeight: 1.5 }}>
+            Windows ranked by S&P 500 CAGR. For each regime, dynamic withdrawal rates ({RATES_LABEL}) are
+            simulated on a {fmtMoney(portfolio)} portfolio; the winner is the rate with the highest
+            average monthly withdrawal.
+          </p>
+          <style>{`
+            .regime-grid {
+              display: grid;
+              gap: 12px;
+              grid-template-columns: 1fr;
+            }
+            @media (min-width: 640px) {
+              .regime-grid { grid-template-columns: repeat(2, 1fr); }
+            }
+            @media (min-width: 1100px) {
+              .regime-grid { grid-template-columns: repeat(4, 1fr); }
+            }
+          `}</style>
+          <div className="regime-grid">
+            {regimeAnalysis.map((reg) => {
+              const accent =
+                reg.key === "best"
+                  ? "#00ff87"
+                  : reg.key === "median"
+                    ? "#00d4ff"
+                    : reg.key === "worst"
+                      ? "#ff6b6b"
+                      : "#ffbe0b";
+              return (
+                <div
+                  key={reg.key}
+                  style={{
+                    background: "#0e0e18",
+                    border: `1px solid ${accent}33`,
+                    borderRadius: 12,
+                    padding: "16px 16px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      letterSpacing: 1.5,
+                      color: accent,
+                      marginBottom: 6,
+                      fontFamily: "'DM Mono', monospace",
+                    }}
+                  >
+                    {reg.label.toUpperCase()}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "'Bebas Neue', sans-serif",
+                      fontSize: 18,
+                      color: "#e6e6f0",
+                      marginBottom: 4,
+                    }}
+                  >
+                    {reg.start}–{reg.end}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#666", marginBottom: 12 }}>
+                    CAGR {reg.cagr >= 0 ? "+" : ""}
+                    {reg.cagr.toFixed(2)}%
+                  </div>
+
+                  <div
+                    style={{
+                      background: `${accent}15`,
+                      border: `1px solid ${accent}44`,
+                      borderRadius: 8,
+                      padding: "10px 12px",
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div style={{ fontSize: 10, color: "#888", letterSpacing: 1, marginBottom: 4 }}>
+                      BEST AVG MONTHLY INCOME
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: "'Bebas Neue', sans-serif",
+                        fontSize: 26,
+                        color: accent,
+                        lineHeight: 1,
+                      }}
+                    >
+                      {reg.winner.rate}%
+                    </div>
+                    <div style={{ fontSize: 13, color: "#ccc", marginTop: 4 }}>
+                      {fmtMoney(reg.winner.avgMonthly)}
+                      <span style={{ color: "#666" }}>/mo</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {reg.byRate.map((row) => {
+                      const isWin = row.rate === reg.winner.rate;
+                      const color = RATE_COLORS[row.rate] ?? "#aaa";
+                      return (
+                        <div
+                          key={row.rate}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            fontSize: 11,
+                            padding: "3px 0",
+                            borderTop: "1px solid #1a1a28",
+                          }}
+                        >
+                          <span style={{ color, fontWeight: isWin ? 600 : 400 }}>
+                            {isWin ? "★ " : ""}
+                            {row.rate}%
+                          </span>
+                          <span style={{ color: isWin ? "#e6e6f0" : "#888" }}>
+                            {fmtMoney(row.avgMonthly)}/mo
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Rolling CAGR overview */}
       <div
