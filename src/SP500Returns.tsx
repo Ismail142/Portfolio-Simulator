@@ -724,6 +724,12 @@ export default function SP500Returns() {
                       {fmtMoney(reg.winner.avgMonthly)}
                       <span style={{ color: "#666" }}>/mo</span>
                     </div>
+                    <div style={{ fontSize: 11, color: "#888", marginTop: 6 }}>
+                      Ending balance{" "}
+                      <span style={{ color: "#e6e6f0" }}>
+                        {fmtMoney(reg.winner.finalBalance)}
+                      </span>
+                    </div>
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
