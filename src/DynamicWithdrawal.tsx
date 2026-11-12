@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { RETURNS } from "./data/historicalReturns";
+import { WITHDRAWAL_RATES as RATES, RATE_COLORS, RATES_LABEL } from "./data/rates";
 
 const DW_STORAGE_KEY = "dynamic-withdrawal-inputs";
 
@@ -24,19 +25,11 @@ const DATA_YEARS = Object.keys(HISTORICAL_RETURNS)
 const MIN_YEAR = DATA_YEARS[0];
 const MAX_YEAR = DATA_YEARS[DATA_YEARS.length - 1];
 
-const RATES = [4, 5, 6, 7, 8] as const;
-const RATE_COLORS: Record<number, string> = {
-  4: "#00ff87",
-  5: "#00d4ff",
-  6: "#ffbe0b",
-  7: "#ff6b6b",
-  8: "#8338ec",
-};
-
 function getHistoricalReturn(calendarYear: number): number {
   if (HISTORICAL_RETURNS[calendarYear] !== undefined) return HISTORICAL_RETURNS[calendarYear];
   return 0;
 }
+
 
 const fmt = (n: number) =>
   n >= 1_000_000
@@ -477,12 +470,15 @@ export default function DynamicWithdrawal() {
         }}
       >
         <span style={{ color: "#888", letterSpacing: 1 }}>STRATEGY · </span>
-        Each year the portfolio grows (or falls) by the historical S&amp;P 500 return, then you
-        withdraw a fixed percentage of whatever it is worth at that point. All five rates{" "}
-        <span style={{ color: "#00ff87" }}>4%</span>, <span style={{ color: "#00d4ff" }}>5%</span>,{" "}
-        <span style={{ color: "#ffbe0b" }}>6%</span>, <span style={{ color: "#ff6b6b" }}>7%</span>,{" "}
-        <span style={{ color: "#8338ec" }}>8%</span> are simulated simultaneously using real S&P 500
-        returns {MIN_YEAR}–{MAX_YEAR}.
+        Each year the portfolio grows (or falls) by the historical S&P 500 return, then you
+        withdraw a fixed percentage of whatever it is worth at that point. All rates{" "}
+        {RATES.map((r, i) => (
+          <span key={r}>
+            {i > 0 ? ", " : ""}
+            <span style={{ color: RATE_COLORS[r] }}>{r}%</span>
+          </span>
+        ))}{" "}
+        are simulated simultaneously using real S&P 500 returns {MIN_YEAR}–{MAX_YEAR}.
       </div>
 
       {calculated &&
@@ -536,7 +532,7 @@ export default function DynamicWithdrawal() {
                   }
                   @media (min-width: 1100px) {
                     .rate-cards-grid {
-                      grid-template-columns: repeat(5, 1fr);
+                      grid-template-columns: repeat(6, 1fr);
                     }
                   }
                 `}</style>
@@ -1060,7 +1056,7 @@ export default function DynamicWithdrawal() {
                   <div>
                     <span style={{ color: "#555", letterSpacing: 1 }}>WITHDRAWAL RULE</span>
                     <span style={{ color: "#00ff87", marginLeft: 10 }}>
-                      4 / 5 / 6 / 7 / 8% of current portfolio value each year
+                      {RATES_LABEL} of current portfolio value each year
                     </span>
                   </div>
                   <div>
@@ -1082,7 +1078,7 @@ export default function DynamicWithdrawal() {
         >
           <div style={{ fontSize: 36, marginBottom: 12 }}>📈</div>
           <div style={{ fontSize: 14, letterSpacing: 1 }}>
-            Enter your details above and press CALCULATE to compare all five withdrawal rates
+            Enter your details above and press CALCULATE to compare all withdrawal rates
           </div>
         </div>
       )}

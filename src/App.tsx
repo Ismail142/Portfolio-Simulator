@@ -65,7 +65,7 @@ const PAGE_META: Record<PageId, { title: string; subtitle: string; group: string
   },
   "yield-calculator": {
     title: "Yield Calculator",
-    subtitle: "Estimate monthly and annual income at 4–8% · USD & GHS",
+    subtitle: "Estimate monthly and annual income at 4–10% · USD & GHS",
     group: "Planners",
   },
   "dynamic-withdrawal": {
