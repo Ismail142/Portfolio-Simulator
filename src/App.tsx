@@ -1,433 +1,548 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
+import PortfolioLongevity from "./PortfolioLongevity";
 import CompoundGrowth from "./CompoundGrowth";
 import RetirementDrawdown from "./RetirementDrawdown";
 import PortfolioYield from "./PortfolioYield";
 import DynamicWithdrawal from "./DynamicWithdrawal";
-import GainBasedWithdrawal from "./GainBasedWithdrawal";
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import SP500Returns from "./SP500Returns";
+import CryptoReturns from "./CryptoReturns";
+import UsdGhsReturns from "./UsdGhsReturns";
 
-const RATES = [4, 5, 6, 7, 8, 10] as const;
-const COLORS = ["#00ff87", "#00d4ff", "#ffbe0b", "#ff6b6b", "#ff006e", "#8338ec"];
-const FIXED_COLOR = "#00ff87";
+type PageId =
+  | "portfolio-longevity"
+  | "compound-growth"
+  | "retirement-planner"
+  | "yield-calculator"
+  | "dynamic-withdrawal"
+  | "sp500-returns"
+  | "crypto-returns"
+  | "usdghs-returns";
 
-type YearPoint = { year: number; value: number; withdrawal: number };
-type WithdrawalSpec = { type: "pct"; rate: number } | { type: "fixed"; monthly: number };
-type Mode = "pct" | "fixed";
+const PAGE_STORAGE_KEY = "finance-tools-active-page";
+const SCROLL_STORAGE_KEY = "finance-tools-scroll-positions";
 
-function simulatePortfolio(
-  startValue: number,
-  spec: WithdrawalSpec,
-  annualReturn: number,
-  numYears: number,
-  monthlyContribution: number,
-): YearPoint[] {
-  const data: YearPoint[] = [];
-  let value = startValue;
-  const annualContribution = monthlyContribution * 12;
-  for (let y = 0; y <= numYears; y++) {
-    let withdrawal = 0;
-    if (y > 0) {
-      withdrawal =
-        spec.type === "pct" ? value * (spec.rate / 100) : Math.min(spec.monthly * 12, value);
-      value = (value - withdrawal + annualContribution) * (1 + annualReturn / 100);
-    }
-    data.push({
-      year: y,
-      value: Math.max(0, Math.round(value)),
-      withdrawal: Math.round(withdrawal),
-    });
-    if (value <= 0) break;
-  }
-  return data;
-}
+const NAV_GROUPS: {
+  label: string;
+  items: { id: PageId; label: string; short: string }[];
+}[] = [
+  {
+    label: "Planners",
+    items: [
+      { id: "portfolio-longevity", label: "Portfolio Longevity", short: "Longevity" },
+      { id: "compound-growth", label: "Compound Growth", short: "Compound" },
+      { id: "retirement-planner", label: "Retirement Planner", short: "Retirement" },
+      { id: "yield-calculator", label: "Yield Calculator", short: "Yield" },
+      { id: "dynamic-withdrawal", label: "Dynamic Withdrawal", short: "Dynamic" },
+    ],
+  },
+  {
+    label: "Markets",
+    items: [
+      { id: "sp500-returns", label: "S&P 500 Returns", short: "S&P 500" },
+      { id: "crypto-returns", label: "Crypto Returns", short: "Crypto" },
+      { id: "usdghs-returns", label: "USD/GHS Returns", short: "USD/GHS" },
+    ],
+  },
+];
 
-const fmt = (n: number) =>
-  n >= 1_000_000
-    ? `$${(n / 1_000_000).toFixed(2)}M`
-    : n >= 1000
-      ? `$${(n / 1000).toFixed(0)}K`
-      : `$${Math.round(n)}`;
+const ALL_NAV = NAV_GROUPS.flatMap((g) => g.items);
 
-type TooltipPayload = { name?: string; value?: number; color?: string };
-const CustomTooltip = ({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: TooltipPayload[];
-  label?: number | string;
-}) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div
-      style={{
-        background: "#0a0a12",
-        border: "1px solid #1a1a28",
-        borderRadius: 8,
-        padding: "10px 14px",
-        fontFamily: "'DM Mono', monospace",
-        fontSize: 12,
-      }}
-    >
-      <div style={{ color: "#888", marginBottom: 6, fontSize: 11, letterSpacing: 1 }}>
-        YEAR {label}
-      </div>
-      {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color, lineHeight: 1.7 }}>
-          {p.name}: {fmt(Number(p.value ?? 0))}
-        </div>
-      ))}
-    </div>
-  );
+const PAGE_META: Record<PageId, { title: string; subtitle: string; group: string }> = {
+  "portfolio-longevity": {
+    title: "Portfolio Longevity",
+    subtitle: "See how long your portfolio will last with a fixed monthly withdrawal",
+    group: "Planners",
+  },
+  "compound-growth": {
+    title: "Compound Growth",
+    subtitle: "Project investment growth with regular contributions over time",
+    group: "Planners",
+  },
+  "retirement-planner": {
+    title: "Retirement Drawdown",
+    subtitle: "Solve for the monthly withdrawal that depletes the portfolio at life expectancy",
+    group: "Planners",
+  },
+  "yield-calculator": {
+    title: "Yield Calculator",
+    subtitle: "Estimate monthly and annual income at 4–10% · USD & GHS",
+    group: "Planners",
+  },
+  "dynamic-withdrawal": {
+    title: "Dynamic Withdrawal",
+    subtitle: `Backtest withdrawal rates against S&P 500 returns · 1926–${new Date().getFullYear()}`,
+    group: "Planners",
+  },
+  "sp500-returns": {
+    title: "S&P 500 Returns",
+    subtitle: "Rolling CAGRs, return distributions, and best / median / worst windows",
+    group: "Markets",
+  },
+  "crypto-returns": {
+    title: "Crypto Returns",
+    subtitle: "Bitcoin annual returns · rolling windows and extreme periods",
+    group: "Markets",
+  },
+  "usdghs-returns": {
+    title: "USD / GHS Returns",
+    subtitle: "Exchange-rate annual returns · rolling windows and extremes",
+    group: "Markets",
+  },
 };
 
-type Page = "simulator" | "compound" | "retirement" | "yield" | "dynamic" | "gain";
+const PAGE_COMPONENTS: Record<PageId, ComponentType> = {
+  "portfolio-longevity": PortfolioLongevity,
+  "compound-growth": CompoundGrowth,
+  "retirement-planner": RetirementDrawdown,
+  "yield-calculator": PortfolioYield,
+  "dynamic-withdrawal": DynamicWithdrawal,
+  "sp500-returns": SP500Returns,
+  "crypto-returns": CryptoReturns,
+  "usdghs-returns": UsdGhsReturns,
+};
 
-const STORAGE_KEY = "portfolio-simulator-inputs";
+function isPageId(value: unknown): value is PageId {
+  return typeof value === "string" && value in PAGE_META;
+}
+
+function loadInitialPage(): PageId {
+  if (typeof window === "undefined") return "portfolio-longevity";
+  try {
+    const raw = window.localStorage.getItem(PAGE_STORAGE_KEY);
+    if (isPageId(raw)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return "portfolio-longevity";
+}
+
+function loadScrollPositions(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SCROLL_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, number>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 export default function App() {
-  const [page, setPage] = useState<Page>(() => {
-    try {
-      const saved = window.localStorage.getItem("finance-tools-page");
-      if (saved === "compound") return "compound";
-      if (saved === "retirement") return "retirement";
-      if (saved === "yield") return "yield";
-      if (saved === "dynamic") return "dynamic";
-      if (saved === "gain") return "gain";
-      return "simulator";
-    } catch {
-      return "simulator";
-    }
-  });
-
+  const [page, setPage] = useState<PageId>(loadInitialPage);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  const navigateTo = (p: Page) => {
-    setPage(p);
-    setMenuOpen(false);
-    try {
-      window.localStorage.setItem("finance-tools-page", p);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const [draftPortfolio, setDraftPortfolio] = useState<number | "">(50000);
-  const [draftMarketReturn, setDraftMarketReturn] = useState<number | "">(10);
-  const [draftNumYears, setDraftNumYears] = useState<number | "">(20);
-  const [draftMonthlyContribution, setDraftMonthlyContribution] = useState<number | "">(0);
-  const [draftMonthlyWithdrawal, setDraftMonthlyWithdrawal] = useState<number | "">(2000);
-  const [draftMode, setDraftMode] = useState<Mode>("pct");
-
-  const [portfolio, setPortfolio] = useState(50000);
-  const [marketReturn, setMarketReturn] = useState(10);
-  const [numYears, setNumYears] = useState(20);
-  const [monthlyContribution, setMonthlyContribution] = useState(0);
-  const [monthlyWithdrawal, setMonthlyWithdrawal] = useState(2000);
-  const [mode, setMode] = useState<Mode>("pct");
-  const [selectedRates, setSelectedRates] = useState<number[]>([4, 5, 6]);
+  const [contentKey, setContentKey] = useState(0);
+  const scrollPositions = useRef<Record<string, number>>(loadScrollPositions());
+  const prevPageRef = useRef<PageId>(page);
+  const meta = PAGE_META[page];
+  const ActivePage = PAGE_COMPONENTS[page];
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        portfolio?: number;
-        marketReturn?: number;
-        numYears?: number;
-        monthlyContribution?: number;
-        monthlyWithdrawal?: number;
-        mode?: Mode;
-      };
-      const p = Math.max(1, Math.floor(Number(saved.portfolio) || 1));
-      const m = Math.max(1, Number(saved.marketReturn) || 1);
-      const y = Math.max(1, Math.floor(Number(saved.numYears) || 1));
-      const c = Math.max(0, Math.floor(Number(saved.monthlyContribution) || 0));
-      const w = Math.max(0, Math.floor(Number(saved.monthlyWithdrawal) || 0));
-      const md: Mode = saved.mode === "fixed" ? "fixed" : "pct";
-      setDraftPortfolio(p);
-      setDraftMarketReturn(m);
-      setDraftNumYears(y);
-      setDraftMonthlyContribution(c);
-      setDraftMonthlyWithdrawal(w);
-      setDraftMode(md);
-      setPortfolio(p);
-      setMarketReturn(m);
-      setNumYears(y);
-      setMonthlyContribution(c);
-      setMonthlyWithdrawal(w);
-      setMode(md);
+      window.history.scrollRestoration = "manual";
     } catch {
-      /* ignore corrupt storage */
+      /* ignore */
     }
   }, []);
 
-  const toggleRate = (r: number) =>
-    setSelectedRates((prev) =>
-      prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r].sort((a, b) => a - b),
-    );
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PAGE_STORAGE_KEY, page);
+    } catch {
+      /* ignore */
+    }
+  }, [page]);
 
-  const isDirty =
-    Number(draftPortfolio) !== portfolio ||
-    Number(draftMarketReturn) !== marketReturn ||
-    Number(draftNumYears) !== numYears ||
-    Number(draftMonthlyContribution) !== monthlyContribution ||
-    Number(draftMonthlyWithdrawal) !== monthlyWithdrawal ||
-    draftMode !== mode;
-
-  const handleCalculate = () => {
-    const p = Math.max(1, Math.floor(Number(draftPortfolio) || 1));
-    const m = Math.max(1, Number(draftMarketReturn) || 1);
-    const y = Math.max(1, Math.floor(Number(draftNumYears) || 1));
-    const c = Math.max(0, Math.floor(Number(draftMonthlyContribution) || 0));
-    const w = Math.max(0, Math.floor(Number(draftMonthlyWithdrawal) || 0));
-    setDraftPortfolio(p);
-    setDraftMarketReturn(m);
-    setDraftNumYears(y);
-    setDraftMonthlyContribution(c);
-    setDraftMonthlyWithdrawal(w);
-    setPortfolio(p);
-    setMarketReturn(m);
-    setNumYears(y);
-    setMonthlyContribution(c);
-    setMonthlyWithdrawal(w);
-    setMode(draftMode);
-    if (typeof window !== "undefined") {
+  useEffect(() => {
+    const prev = prevPageRef.current;
+    if (prev !== page) {
+      scrollPositions.current[prev] = window.scrollY;
       try {
         window.localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({
-            portfolio: p,
-            marketReturn: m,
-            numYears: y,
-            monthlyContribution: c,
-            monthlyWithdrawal: w,
-            mode: draftMode,
-          }),
+          SCROLL_STORAGE_KEY,
+          JSON.stringify(scrollPositions.current),
         );
       } catch {
-        /* storage may be unavailable */
+        /* ignore */
       }
+      prevPageRef.current = page;
+      setContentKey((k) => k + 1);
     }
+    const y = scrollPositions.current[page] ?? 0;
+    const id = window.requestAnimationFrame(() => {
+      window.scrollTo(0, y);
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [page]);
+
+  useEffect(() => {
+    const persist = () => {
+      scrollPositions.current[prevPageRef.current] = window.scrollY;
+      try {
+        window.localStorage.setItem(PAGE_STORAGE_KEY, prevPageRef.current);
+        window.localStorage.setItem(
+          SCROLL_STORAGE_KEY,
+          JSON.stringify(scrollPositions.current),
+        );
+      } catch {
+        /* ignore */
+      }
+    };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") persist();
+    };
+    window.addEventListener("pagehide", persist);
+    window.addEventListener("beforeunload", persist);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("pagehide", persist);
+      window.removeEventListener("beforeunload", persist);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  // Close mobile menu on Escape
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen]);
+
+  // Lock body scroll when mobile menu open
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [menuOpen]);
+
+  const goTo = (id: PageId) => {
+    setPage(id);
+    setMenuOpen(false);
   };
 
-  const fixedKey = "Fixed";
-
-  const allData = useMemo(() => {
-    const yearArr: Record<string, number>[] = Array.from({ length: numYears + 1 }, (_, i) => ({
-      year: i,
-    }));
-    if (mode === "pct") {
-      selectedRates.forEach((rate) => {
-        const sim = simulatePortfolio(
-          portfolio,
-          { type: "pct", rate },
-          marketReturn,
-          numYears,
-          monthlyContribution,
-        );
-        sim.forEach((d) => {
-          yearArr[d.year][`${rate}%`] = d.value;
-          yearArr[d.year][`w${rate}`] = Math.round(d.withdrawal / 12);
-        });
-      });
-    } else {
-      const sim = simulatePortfolio(
-        portfolio,
-        { type: "fixed", monthly: monthlyWithdrawal },
-        marketReturn,
-        numYears,
-        monthlyContribution,
-      );
-      sim.forEach((d) => {
-        yearArr[d.year][fixedKey] = d.value;
-        yearArr[d.year][`w${fixedKey}`] = Math.round(d.withdrawal / 12);
-      });
-    }
-    return yearArr;
-  }, [
-    portfolio,
-    marketReturn,
-    numYears,
-    selectedRates,
-    monthlyContribution,
-    monthlyWithdrawal,
-    mode,
-  ]);
-
-  const summaryRows = useMemo(() => {
-    if (mode === "pct") {
-      return RATES.map((rate) => {
-        const sim = simulatePortfolio(
-          portfolio,
-          { type: "pct", rate },
-          marketReturn,
-          numYears,
-          monthlyContribution,
-        );
-        const lastPoint = sim[sim.length - 1];
-        const depletedAt = lastPoint.value === 0 ? sim.findIndex((d) => d.value === 0) : null;
-        const yr1Withdrawal = sim[1]?.withdrawal || 0;
-        const lastWithdrawal = lastPoint.value > 0 ? Math.round(lastPoint.value * (rate / 100)) : 0;
-        return {
-          label: `${rate}%`,
-          yr1Withdrawal,
-          lastWithdrawal,
-          finalValue: lastPoint.value,
-          depletedAt,
-        };
-      });
-    }
-    const sim = simulatePortfolio(
-      portfolio,
-      { type: "fixed", monthly: monthlyWithdrawal },
-      marketReturn,
-      numYears,
-      monthlyContribution,
-    );
-    const lastPoint = sim[sim.length - 1];
-    const depletedAt = lastPoint.value === 0 ? sim.findIndex((d) => d.value === 0) : null;
-    const yr1Withdrawal = sim[1]?.withdrawal || 0;
-    const lastWithdrawal = sim[sim.length - 1]?.withdrawal || 0;
-    return [
-      {
-        label: `${fmt(monthlyWithdrawal)}/mo`,
-        yr1Withdrawal,
-        lastWithdrawal,
-        finalValue: lastPoint.value,
-        depletedAt,
-      },
-    ];
-  }, [portfolio, marketReturn, numYears, monthlyContribution, monthlyWithdrawal, mode]);
-
-  const colorFor = (rate: number) => COLORS[RATES.indexOf(rate as (typeof RATES)[number])];
-
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#070710",
-        color: "#e6e6f0",
-        fontFamily: "'DM Mono', monospace",
-      }}
-    >
+    <div className="app-shell">
       <style>{`
-        .rate-btn { border: 1px solid #333; background: transparent; color: #666; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-family: 'DM Mono', monospace; font-size: 13px; transition: all 0.15s; }
-        .rate-btn.active { border-color: currentColor; background: #ffffff12; }
-        .rate-btn:hover { border-color: #555; }
-        .stat-card { background: #0e0e18; border: 1px solid #1a1a28; border-radius: 12px; padding: 18px 20px; }
-        .slider-wrap { display: flex; flex-direction: column; gap: 8px; }
-        .slider-label { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: #888; letter-spacing: 0.5px; }
-        .slider-val { color: #00ff87; font-weight: 500; font-size: 15px; }
-        .section { background: #0a0a14; border: 1px solid #15151f; border-radius: 14px; padding: 22px; margin-top: 22px; }
-        .section-title { font-family: 'Bebas Neue', sans-serif; font-size: 14px; letter-spacing: 3px; color: #888; margin: 0 0 16px; }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; font-weight: 400; color: #666; padding: 10px 12px; border-bottom: 1px solid #1a1a28; font-size: 11px; letter-spacing: 1px; }
-        td { padding: 12px; border-bottom: 1px solid #14141c; }
-        .num-input { width: 100%; background: #07070d; border: 1px solid #1a1a28; color: #00ff87; font-family: 'DM Mono', monospace; font-size: 15px; padding: 8px 10px; border-radius: 6px; outline: none; text-align: right; }
-        .num-input:focus { border-color: #00ff87; box-shadow: 0 0 0 2px #00ff8722; }
-        .num-input::-webkit-outer-spin-button, .num-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        .num-input[type=number] { -moz-appearance: textfield; }
-        .calc-bar { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
-        .calc-hint { font-size: 12px; color: #ffbe0b; letter-spacing: 0.5px; }
-        .calc-btn { background: #00ff87; color: #050510; border: none; padding: 12px 28px; border-radius: 8px; font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 3px; cursor: pointer; box-shadow: 0 0 20px #00ff8744; transition: all 0.15s; }
-        .calc-btn:hover:not(:disabled) { background: #00ffa3; box-shadow: 0 0 28px #00ff8788; }
-        .calc-btn:disabled { background: #1a1a28; color: #555; cursor: not-allowed; box-shadow: none; }
-        .mode-switch { display: inline-flex; border: 1px solid #1a1a28; border-radius: 8px; overflow: hidden; background: #0e0e18; }
-        .mode-btn { background: transparent; color: #666; border: none; padding: 10px 18px; font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 1.5px; cursor: pointer; transition: all 0.15s; }
-        .mode-btn.active { background: #00ff8722; color: #00ff87; }
-        .topbar { position: sticky; top: 0; z-index: 50; background: #07071099; backdrop-filter: blur(12px); border-bottom: 1px solid #1a1a28; }
-        .topbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 52px; gap: 16px; }
-        .topbar-brand { font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 3px; color: #fff; white-space: nowrap; }
-        .nav-pills { display: flex; gap: 2px; background: #0e0e18; border: 1px solid #1a1a28; border-radius: 8px; padding: 3px; }
-        .nav-pill { background: transparent; border: none; color: #666; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1.5px; padding: 6px 16px; border-radius: 6px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
-        .nav-pill.active { background: #00ff8718; color: #00ff87; }
-        .nav-pill:hover:not(.active) { color: #aaa; background: #ffffff08; }
-        .hamburger { display: none; flex-direction: column; justify-content: center; gap: 5px; background: transparent; border: none; cursor: pointer; padding: 6px; }
-        .hamburger span { display: block; width: 22px; height: 2px; background: #aaa; border-radius: 2px; transition: all 0.2s; }
+        .app-shell {
+          min-height: 100vh;
+          background:
+            radial-gradient(ellipse 80% 50% at 50% -20%, #0a1a14 0%, transparent 55%),
+            var(--app-bg);
+          color: var(--app-text);
+          font-family: var(--app-font-mono);
+        }
+
+        .topbar {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          height: var(--app-topbar-h);
+          background: rgba(7, 7, 16, 0.78);
+          backdrop-filter: blur(18px) saturate(1.2);
+          -webkit-backdrop-filter: blur(18px) saturate(1.2);
+          border-bottom: 1px solid var(--app-border);
+        }
+        .topbar-inner {
+          max-width: var(--app-max);
+          margin: 0 auto;
+          padding: 0 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          height: 100%;
+          gap: 12px;
+        }
+        .topbar-brand {
+          font-family: var(--app-font-display);
+          font-size: 18px;
+          letter-spacing: 3px;
+          color: #fff;
+          white-space: nowrap;
+          flex-shrink: 0;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 6px 0;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          transition: color 0.15s ease;
+        }
+        .topbar-brand:hover { color: var(--app-accent); }
+        .brand-mark {
+          width: 8px;
+          height: 8px;
+          border-radius: 2px;
+          background: var(--app-accent);
+          box-shadow: 0 0 12px var(--app-accent-glow);
+          flex-shrink: 0;
+        }
+
+        .nav-pills {
+          display: none;
+          align-items: center;
+          gap: 2px;
+          flex: 1;
+          justify-content: flex-end;
+          overflow-x: auto;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          mask-image: linear-gradient(90deg, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+        }
+        .nav-pills::-webkit-scrollbar { display: none; }
+        .nav-group {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+        }
+        .nav-divider {
+          width: 1px;
+          height: 20px;
+          background: var(--app-border);
+          margin: 0 8px;
+          flex-shrink: 0;
+        }
+        .nav-pill {
+          background: transparent;
+          border: 1px solid transparent;
+          color: var(--app-text-dim);
+          padding: 7px 11px;
+          min-height: 36px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-family: var(--app-font-mono);
+          font-size: 11px;
+          letter-spacing: 0.6px;
+          white-space: nowrap;
+          transition: all 0.15s ease;
+        }
+        .nav-pill:hover {
+          color: #ccc;
+          background: #ffffff08;
+          border-color: #222;
+        }
+        .nav-pill.active {
+          color: var(--app-accent);
+          background: var(--app-accent-dim);
+          border-color: #00ff8744;
+          box-shadow: 0 0 12px #00ff8718;
+        }
+
+        .hamburger {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          gap: 5px;
+          background: transparent;
+          border: 1px solid var(--app-border);
+          border-radius: 8px;
+          cursor: pointer;
+          padding: 11px;
+          flex-shrink: 0;
+          transition: border-color 0.15s, background 0.15s;
+          min-width: 42px;
+          min-height: 42px;
+        }
+        .hamburger:hover { border-color: #333; background: #ffffff06; }
+        .hamburger span {
+          display: block;
+          width: 18px;
+          height: 2px;
+          background: #aaa;
+          border-radius: 2px;
+          transition: all 0.25s ease;
+        }
+        .hamburger.open { border-color: var(--app-accent); }
+        .hamburger.open span { background: var(--app-accent); }
         .hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-        .hamburger.open span:nth-child(2) { opacity: 0; }
+        .hamburger.open span:nth-child(2) { opacity: 0; transform: scaleX(0); }
         .hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-        .mobile-menu { display: none; }
-        @media (max-width: 600px) {
-          .nav-pills { display: none; }
-          .hamburger { display: flex; }
-          .mobile-menu { display: block; position: absolute; top: 52px; left: 0; right: 0; background: #0e0e18; border-bottom: 1px solid #1a1a28; z-index: 49; }
-          .mobile-menu-item { display: block; width: 100%; background: transparent; border: none; border-bottom: 1px solid #1a1a28; color: #666; font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 2px; padding: 16px 24px; text-align: left; cursor: pointer; transition: all 0.15s; }
-          .mobile-menu-item:last-child { border-bottom: none; }
-          .mobile-menu-item.active { color: #00ff87; background: #00ff8710; }
-          .mobile-menu-item:hover:not(.active) { color: #aaa; background: #ffffff08; }
-          .mobile-menu-item .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-right: 12px; opacity: 0.6; }
+
+        .menu-backdrop {
+          position: fixed;
+          inset: 0;
+          top: var(--app-topbar-h);
+          background: rgba(0, 0, 0, 0.55);
+          z-index: 48;
+          animation: fadeIn 0.18s ease;
+        }
+        .mobile-menu {
+          position: absolute;
+          top: var(--app-topbar-h);
+          left: 0;
+          right: 0;
+          max-height: min(72vh, 520px);
+          overflow-y: auto;
+          background: var(--app-bg-elevated);
+          border-bottom: 1px solid var(--app-border);
+          z-index: 49;
+          box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+          animation: menuSlide 0.2s ease;
+          padding: 8px 0 16px;
+        }
+        @keyframes menuSlide {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes pageIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .mobile-group-label {
+          font-size: 10px;
+          letter-spacing: 2px;
+          color: var(--app-text-dim);
+          text-transform: uppercase;
+          padding: 14px 24px 6px;
+        }
+        .mobile-menu-item {
+          display: flex;
+          align-items: center;
+          width: 100%;
+          background: transparent;
+          border: none;
+          color: #888;
+          padding: 14px 24px;
+          min-height: 48px;
+          font-family: var(--app-font-mono);
+          font-size: 14px;
+          letter-spacing: 0.8px;
+          cursor: pointer;
+          text-align: left;
+          transition: all 0.15s;
+        }
+        .mobile-menu-item.active {
+          color: var(--app-accent);
+          background: linear-gradient(90deg, #00ff8712 0%, transparent 100%);
+        }
+        .mobile-menu-item:hover:not(.active) {
+          color: #ccc;
+          background: #ffffff06;
+        }
+        .mobile-menu-item .dot {
+          display: inline-block;
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: currentColor;
+          margin-right: 14px;
+          opacity: 0.45;
+          flex-shrink: 0;
+        }
+        .mobile-menu-item.active .dot {
+          opacity: 1;
+          box-shadow: 0 0 8px currentColor;
+        }
+
+        .page-wrap {
+          padding: 28px 20px 80px;
+        }
+        .page-header {
+          max-width: var(--app-max);
+          margin: 0 auto 28px;
+        }
+        .page-eyebrow {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 11px;
+          letter-spacing: 2px;
+          color: var(--app-text-dim);
+          text-transform: uppercase;
+          margin-bottom: 10px;
+        }
+        .page-eyebrow-dot {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+          background: var(--app-accent);
+          opacity: 0.8;
+        }
+        .page-title {
+          font-family: var(--app-font-display);
+          font-size: clamp(30px, 5vw, 46px);
+          letter-spacing: 2.5px;
+          margin: 0;
+          color: #fff;
+          line-height: 1.05;
+          font-weight: 400;
+        }
+        .page-subtitle {
+          color: var(--app-text-muted);
+          margin: 10px 0 0;
+          font-size: 13px;
+          line-height: 1.55;
+          max-width: 54ch;
+        }
+        .page-content {
+          max-width: var(--app-max);
+          margin: 0 auto;
+        }
+        .page-enter {
+          animation: pageIn 0.28s ease both;
+        }
+
+        @media (min-width: 960px) {
+          .nav-pills { display: flex; }
+          .hamburger { display: none; }
+          .mobile-menu, .menu-backdrop { display: none !important; }
+          .topbar-inner { padding: 0 24px; }
+          .page-wrap { padding: 36px 24px 96px; }
+        }
+        @media (min-width: 1100px) {
+          .nav-pill { font-size: 12px; padding: 8px 13px; }
         }
       `}</style>
 
-      <div className="topbar" style={{ position: "sticky", top: 0, zIndex: 50 }}>
+      <header className="topbar">
         <div className="topbar-inner">
-          <span className="topbar-brand">FINANCE TOOLS</span>
+          <button
+            type="button"
+            className="topbar-brand"
+            onClick={() => goTo("portfolio-longevity")}
+            aria-label="Finance Tools home"
+          >
+            <span className="brand-mark" aria-hidden />
+            FINANCE TOOLS
+          </button>
 
-          {/* Desktop pills */}
-          <nav className="nav-pills">
-            <button
-              type="button"
-              className={`nav-pill ${page === "simulator" ? "active" : ""}`}
-              onClick={() => navigateTo("simulator")}
-            >
-              PORTFOLIO SIMULATOR
-            </button>
-            <button
-              type="button"
-              className={`nav-pill ${page === "compound" ? "active" : ""}`}
-              onClick={() => navigateTo("compound")}
-            >
-              COMPOUND GROWTH
-            </button>
-            <button
-              type="button"
-              className={`nav-pill ${page === "retirement" ? "active" : ""}`}
-              onClick={() => navigateTo("retirement")}
-            >
-              RETIREMENT PLANNER
-            </button>
-            <button
-              type="button"
-              className={`nav-pill ${page === "yield" ? "active" : ""}`}
-              onClick={() => navigateTo("yield")}
-            >
-              YIELD CALCULATOR
-            </button>
-            <button
-              type="button"
-              className={`nav-pill ${page === "dynamic" ? "active" : ""}`}
-              onClick={() => navigateTo("dynamic")}
-            >
-              DYNAMIC WITHDRAWAL
-            </button>
-            <button
-              type="button"
-              className={`nav-pill ${page === "gain" ? "active" : ""}`}
-              onClick={() => navigateTo("gain")}
-            >
-              SMART WITHDRAWAL
-            </button>
+          <nav className="nav-pills" aria-label="Main navigation">
+            {NAV_GROUPS.map((group, gi) => (
+              <div key={group.label} className="nav-group">
+                {gi > 0 && <span className="nav-divider" aria-hidden />}
+                {group.items.map(({ id, short, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`nav-pill ${page === id ? "active" : ""}`}
+                    onClick={() => goTo(id)}
+                    title={label}
+                    aria-current={page === id ? "page" : undefined}
+                  >
+                    {short}
+                  </button>
+                ))}
+              </div>
+            ))}
           </nav>
 
-          {/* Mobile hamburger */}
           <button
             type="button"
             className={`hamburger ${menuOpen ? "open" : ""}`}
             onClick={() => setMenuOpen((o) => !o)}
-            aria-label="Toggle menu"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
           >
             <span />
             <span />
@@ -435,405 +550,51 @@ export default function App() {
           </button>
         </div>
 
-        {/* Mobile dropdown */}
         {menuOpen && (
-          <div className="mobile-menu">
-            {(
-              [
-                { key: "simulator", label: "Portfolio Simulator" },
-                { key: "compound", label: "Compound Growth" },
-                { key: "retirement", label: "Retirement Planner" },
-                { key: "yield", label: "Yield Calculator" },
-                { key: "dynamic", label: "Dynamic Withdrawal" },
-                { key: "gain", label: "Smart Withdrawal" },
-              ] as { key: Page; label: string }[]
-            ).map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={`mobile-menu-item ${page === key ? "active" : ""}`}
-                onClick={() => navigateTo(key)}
-              >
-                <span className="dot" />
-                {label}
-              </button>
-            ))}
-          </div>
+          <>
+            <div
+              className="menu-backdrop"
+              onClick={() => setMenuOpen(false)}
+              aria-hidden
+            />
+            <div className="mobile-menu" role="menu" aria-label="Tools">
+              {NAV_GROUPS.map((group) => (
+                <div key={group.label}>
+                  <div className="mobile-group-label">{group.label}</div>
+                  {group.items.map(({ id, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="menuitem"
+                      className={`mobile-menu-item ${page === id ? "active" : ""}`}
+                      onClick={() => goTo(id)}
+                      aria-current={page === id ? "page" : undefined}
+                    >
+                      <span className="dot" />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </>
         )}
-      </div>
+      </header>
 
-      <div style={{ padding: "32px 24px 64px" }}>
-        <header style={{ maxWidth: 1200, margin: "0 auto 24px" }}>
-          <h1
-            style={{
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: "clamp(32px, 4vw, 50px)",
-              letterSpacing: 4,
-              margin: 0,
-              color: "#fff",
-            }}
-          >
-            {page === "simulator"
-              ? "PORTFOLIO SIMULATOR"
-              : page === "compound"
-                ? "COMPOUND GROWTH"
-                : page === "retirement"
-                  ? "RETIREMENT DRAWDOWN PLANNER"
-                  : page === "yield"
-                    ? "PORTFOLIO YIELD CALCULATOR"
-                    : page === "dynamic"
-                    ? "DYNAMIC WITHDRAWAL SIMULATOR"
-                    : "SMART WITHDRAWAL SIMULATOR"}
-          </h1>
-          <p style={{ color: "#777", margin: "4px 0 0", fontSize: 13 }}>
-            {page === "simulator"
-              ? "Choose % withdrawal or fixed monthly amount · monthly contributions included"
-              : page === "compound"
-                ? "Calculate how your investment grows with compound interest and regular contributions"
-                : page === "retirement"
-                  ? "Solve for the exact monthly withdrawal that draws your portfolio to $0 at your life expectancy"
-                  : page === "yield"
-                    ? "Enter USD or GHS value · see monthly and annual yield at 4–8% · live currency conversion"
-                    : page === "dynamic"
-                      ? "Test dynamic withdrawal against real S&P 500 returns 1985–2026 · USD & GHS"
-                      : "Withdrawal rate auto-adjusts 4–8% based on portfolio gain vs cost basis · historical S&P 500"}
-          </p>
+      <main className="page-wrap">
+        <header className="page-header">
+          <div className="page-eyebrow">
+            <span className="page-eyebrow-dot" aria-hidden />
+            {meta.group}
+          </div>
+          <h1 className="page-title">{meta.title}</h1>
+          <p className="page-subtitle">{meta.subtitle}</p>
         </header>
 
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-          {page === "compound" && <CompoundGrowth />}
-          {page === "retirement" && <RetirementDrawdown />}
-          {page === "yield" && <PortfolioYield />}
-          {page === "dynamic" && <DynamicWithdrawal />}
-          {page === "gain" && <GainBasedWithdrawal />}
-          {page === "simulator" && (
-            <>
-              <div
-                style={{
-                  marginBottom: 16,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  flexWrap: "wrap",
-                }}
-              >
-                <span style={{ fontSize: 12, color: "#888", letterSpacing: 1.5 }}>
-                  WITHDRAWAL MODE
-                </span>
-                <div className="mode-switch">
-                  <button
-                    type="button"
-                    className={`mode-btn ${draftMode === "pct" ? "active" : ""}`}
-                    onClick={() => setDraftMode("pct")}
-                  >
-                    PERCENTAGE
-                  </button>
-                  <button
-                    type="button"
-                    className={`mode-btn ${draftMode === "fixed" ? "active" : ""}`}
-                    onClick={() => setDraftMode("fixed")}
-                  >
-                    FIXED AMOUNT
-                  </button>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                  gap: 16,
-                }}
-              >
-                <div className="stat-card slider-wrap">
-                  <div className="slider-label">
-                    <span>Starting Portfolio ($)</span>
-                    <span className="slider-val">{fmt(Number(draftPortfolio) || 0)}</span>
-                  </div>
-                  <input
-                    className="num-input"
-                    type="number"
-                    min={1}
-                    step={1000}
-                    value={draftPortfolio}
-                    onChange={(e) =>
-                      setDraftPortfolio(e.target.value === "" ? "" : +e.target.value)
-                    }
-                  />
-                </div>
-
-                <div className="stat-card slider-wrap">
-                  <div className="slider-label">
-                    <span>Annual Market Return (%)</span>
-                    <span className="slider-val">{Number(draftMarketReturn) || 0}%</span>
-                  </div>
-                  <input
-                    className="num-input"
-                    type="number"
-                    min={1}
-                    step={0.1}
-                    value={draftMarketReturn}
-                    onChange={(e) =>
-                      setDraftMarketReturn(e.target.value === "" ? "" : +e.target.value)
-                    }
-                  />
-                </div>
-
-                <div className="stat-card slider-wrap">
-                  <div className="slider-label">
-                    <span>Simulation Years</span>
-                    <span className="slider-val">{Number(draftNumYears) || 0} yrs</span>
-                  </div>
-                  <input
-                    className="num-input"
-                    type="number"
-                    min={1}
-                    step={1}
-                    value={draftNumYears}
-                    onChange={(e) => setDraftNumYears(e.target.value === "" ? "" : +e.target.value)}
-                  />
-                </div>
-
-                <div className="stat-card slider-wrap">
-                  <div className="slider-label">
-                    <span>Monthly Contribution ($)</span>
-                    <span className="slider-val">{fmt(Number(draftMonthlyContribution) || 0)}</span>
-                  </div>
-                  <input
-                    className="num-input"
-                    type="number"
-                    min={0}
-                    step={50}
-                    value={draftMonthlyContribution}
-                    onChange={(e) =>
-                      setDraftMonthlyContribution(e.target.value === "" ? "" : +e.target.value)
-                    }
-                  />
-                </div>
-
-                {draftMode === "fixed" && (
-                  <div className="stat-card slider-wrap">
-                    <div className="slider-label">
-                      <span>Monthly Withdrawal ($)</span>
-                      <span className="slider-val">{fmt(Number(draftMonthlyWithdrawal) || 0)}</span>
-                    </div>
-                    <input
-                      className="num-input"
-                      type="number"
-                      min={0}
-                      step={100}
-                      value={draftMonthlyWithdrawal}
-                      onChange={(e) =>
-                        setDraftMonthlyWithdrawal(e.target.value === "" ? "" : +e.target.value)
-                      }
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="calc-bar">
-                <span className="calc-hint">
-                  {isDirty ? "Unapplied changes — press Calculate" : ""}
-                </span>
-                <button
-                  className="calc-btn"
-                  onClick={handleCalculate}
-                  disabled={!isDirty}
-                  type="button"
-                >
-                  CALCULATE
-                </button>
-              </div>
-
-              {mode === "pct" && (
-                <div className="section">
-                  <h2 className="section-title">TOGGLE WITHDRAWAL RATES TO COMPARE</h2>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                    {RATES.map((r, i) => {
-                      const active = selectedRates.includes(r);
-                      return (
-                        <button
-                          key={r}
-                          className={`rate-btn ${active ? "active" : ""}`}
-                          style={{ color: active ? COLORS[i] : undefined }}
-                          onClick={() => toggleRate(r)}
-                        >
-                          {r}%
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              <div className="section">
-                <h2 className="section-title">PORTFOLIO VALUE OVER TIME</h2>
-                <div style={{ width: "100%", height: 360 }}>
-                  <ResponsiveContainer>
-                    <LineChart data={allData} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
-                      <CartesianGrid stroke="#1a1a28" strokeDasharray="3 3" />
-                      <XAxis
-                        dataKey="year"
-                        stroke="#555"
-                        tick={{ fill: "#666", fontSize: 11 }}
-                        label={{
-                          value: "Year",
-                          position: "insideBottom",
-                          offset: -5,
-                          fill: "#555",
-                        }}
-                      />
-                      <YAxis
-                        stroke="#555"
-                        tick={{ fill: "#666", fontSize: 11 }}
-                        tickFormatter={(v) => fmt(Number(v))}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Legend wrapperStyle={{ fontSize: 12, color: "#888" }} />
-                      {mode === "pct" ? (
-                        selectedRates.map((r) => (
-                          <Line
-                            key={r}
-                            type="monotone"
-                            dataKey={`${r}%`}
-                            stroke={colorFor(r)}
-                            strokeWidth={2}
-                            dot={false}
-                            activeDot={{ r: 4 }}
-                          />
-                        ))
-                      ) : (
-                        <Line
-                          type="monotone"
-                          dataKey={fixedKey}
-                          name={`${fmt(monthlyWithdrawal)}/mo`}
-                          stroke={FIXED_COLOR}
-                          strokeWidth={2}
-                          dot={false}
-                          activeDot={{ r: 4 }}
-                        />
-                      )}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="section">
-                <h2 className="section-title">MONTHLY EXPENSES (= WITHDRAWAL ÷ 12)</h2>
-                <p style={{ color: "#666", fontSize: 12, marginTop: -8, marginBottom: 14 }}>
-                  {mode === "pct"
-                    ? "Monthly spend available each year — rises and falls with the portfolio value"
-                    : "Fixed monthly withdrawal amount per year (capped if portfolio runs low)"}
-                </p>
-                <div style={{ width: "100%", height: 320 }}>
-                  <ResponsiveContainer>
-                    <LineChart data={allData} margin={{ top: 10, right: 20, bottom: 0, left: 0 }}>
-                      <CartesianGrid stroke="#1a1a28" strokeDasharray="3 3" />
-                      <XAxis dataKey="year" stroke="#555" tick={{ fill: "#666", fontSize: 11 }} />
-                      <YAxis
-                        stroke="#555"
-                        tick={{ fill: "#666", fontSize: 11 }}
-                        tickFormatter={(v) => fmt(Number(v))}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      {mode === "pct" ? (
-                        selectedRates.map((r) => (
-                          <Line
-                            key={r}
-                            type="monotone"
-                            dataKey={`w${r}`}
-                            name={`${r}% monthly expense`}
-                            stroke={colorFor(r)}
-                            strokeWidth={2}
-                            dot={false}
-                          />
-                        ))
-                      ) : (
-                        <Line
-                          type="monotone"
-                          dataKey={`w${fixedKey}`}
-                          name="Monthly expense"
-                          stroke={FIXED_COLOR}
-                          strokeWidth={2}
-                          dot={false}
-                        />
-                      )}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="section">
-                <h2 className="section-title">
-                  {mode === "pct" ? "RATE COMPARISON SUMMARY" : "FIXED WITHDRAWAL SUMMARY"} ·{" "}
-                  {numYears}-YEAR HORIZON
-                </h2>
-                <div style={{ overflowX: "auto" }}>
-                  <table>
-                    <thead>
-                      <tr>
-                        {[
-                          mode === "pct" ? "Rate" : "Withdrawal",
-                          "Yr 1 Monthly Exp",
-                          `Yr ${numYears} Monthly Exp`,
-                          `Portfolio Yr ${numYears}`,
-                          "Status",
-                        ].map((h) => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {summaryRows.map(
-                        ({ label, yr1Withdrawal, lastWithdrawal, finalValue, depletedAt }, i) => {
-                          const color = mode === "pct" ? COLORS[i] : FIXED_COLOR;
-                          const status = depletedAt
-                            ? `⚠ Depleted yr ${depletedAt}`
-                            : finalValue > portfolio
-                              ? "✓ Growing"
-                              : "~ Declining";
-                          const statusColor = depletedAt
-                            ? "#ff6b6b"
-                            : finalValue > portfolio
-                              ? "#00ff87"
-                              : "#ffbe0b";
-                          return (
-                            <tr key={label}>
-                              <td style={{ color, fontWeight: 500 }}>{label}</td>
-                              <td>{fmt(Math.round(yr1Withdrawal / 12))}</td>
-                              <td
-                                style={{
-                                  color: lastWithdrawal >= yr1Withdrawal ? "#00ff87" : "#ff6b6b",
-                                }}
-                              >
-                                {fmt(Math.round(lastWithdrawal / 12))}
-                              </td>
-                              <td>{fmt(finalValue)}</td>
-                              <td style={{ color: statusColor }}>{status}</td>
-                            </tr>
-                          );
-                        },
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <p
-                style={{
-                  textAlign: "center",
-                  color: "#444",
-                  fontSize: 11,
-                  marginTop: 32,
-                  letterSpacing: 1,
-                }}
-              >
-                For illustrative purposes only · Not financial advice · Returns not guaranteed
-              </p>
-            </>
-          )}
+        <div className="page-content page-enter" key={contentKey}>
+          <ActivePage />
         </div>
-      </div>
+      </main>
     </div>
   );
 }

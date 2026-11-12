@@ -4,20 +4,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/*
- * Design system definition.
- *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
- *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
- */
-
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -95,6 +81,29 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.929 0.013 255.508);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+
+  /* App design tokens (dark terminal system) */
+  --app-bg: #070710;
+  --app-bg-elevated: #0c0c14;
+  --app-surface: #0e0e18;
+  --app-surface-hover: #12121e;
+  --app-border: #1a1a28;
+  --app-border-strong: #2a2a3a;
+  --app-text: #e6e6f0;
+  --app-text-muted: #888899;
+  --app-text-dim: #5c5c6e;
+  --app-accent: #00ff87;
+  --app-accent-dim: #00ff8722;
+  --app-accent-glow: #00ff8744;
+  --app-warn: #ffbe0b;
+  --app-danger: #ff6b6b;
+  --app-info: #00d4ff;
+  --app-radius: 12px;
+  --app-radius-sm: 8px;
+  --app-font-mono: "DM Mono", ui-monospace, monospace;
+  --app-font-display: "Bebas Neue", system-ui, sans-serif;
+  --app-max: 1200px;
+  --app-topbar-h: 60px;
 }
 
 .dark {
@@ -135,10 +144,397 @@
 @layer base {
   * {
     border-color: var(--color-border);
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    margin: 0;
+    min-height: 100vh;
+    background-color: var(--app-bg);
+    color: var(--app-text);
+    font-family: var(--app-font-mono);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--app-accent-dim);
+    color: var(--app-accent);
+  }
+
+  /* Refined scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-border-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: var(--app-border-strong);
+    border-radius: 999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: #3a3a4e;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+}
+
+/* ========== Shared component system (used by all tools) ========== */
+
+.rate-btn {
+  border: 1px solid var(--app-border-strong);
+  background: transparent;
+  color: var(--app-text-dim);
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: var(--app-font-mono);
+  font-size: 13px;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.rate-btn:hover {
+  color: var(--app-text);
+  border-color: #444;
+  background: #ffffff08;
+}
+.rate-btn.active {
+  border-color: currentColor;
+  background: #ffffff12;
+  box-shadow: 0 0 0 1px currentColor inset;
+}
+
+.stat-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  padding: 16px 18px;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+.stat-card:focus-within {
+  border-color: #2a3a32;
+  box-shadow: 0 0 0 1px #00ff8718;
+}
+.stat-card:hover {
+  border-color: #222233;
+  background: var(--app-surface-hover);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--app-text-dim);
+  letter-spacing: 1.5px;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.stat-value {
+  font-size: 22px;
+  color: var(--app-accent);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+}
+
+.chart-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  padding: 20px 22px;
+  margin-bottom: 20px;
+  transition: border-color 0.15s ease;
+}
+.chart-card:hover {
+  border-color: #222233;
+}
+
+.chart-title {
+  font-size: 11px;
+  color: var(--app-text-muted);
+  letter-spacing: 2px;
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chart-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--app-border), transparent);
+}
+
+.slider-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--app-text-muted);
+  letter-spacing: 0.8px;
+}
+
+.slider-val {
+  color: var(--app-accent);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.num-input {
+  width: 100%;
+  background: #07070d;
+  border: 1px solid var(--app-border);
+  color: var(--app-accent);
+  font-family: var(--app-font-mono);
+  font-size: 15px;
+  padding: 10px 12px;
+  border-radius: var(--app-radius-sm);
+  outline: none;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.num-input:hover {
+  border-color: #2a2a3a;
+}
+.num-input:focus {
+  border-color: var(--app-accent);
+  box-shadow: 0 0 0 3px var(--app-accent-dim);
+  background: #0a0a10;
+}
+.num-input::placeholder {
+  color: #3a3a4a;
+}
+.num-input::-webkit-outer-spin-button,
+.num-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.num-input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+th {
+  text-align: left;
+  color: var(--app-text-dim);
+  font-weight: 400;
+  letter-spacing: 1px;
+  font-size: 11px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--app-border);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #14141c;
+  color: var(--app-text);
+}
+tbody tr {
+  transition: background 0.12s ease;
+}
+tbody tr:hover {
+  background: #ffffff06;
+}
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.calc-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, #0c0c16 0%, #0a0a12 100%);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  position: sticky;
+  bottom: 12px;
+  z-index: 20;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.35);
+}
+
+.calc-hint {
+  font-size: 12px;
+  color: var(--app-warn);
+  letter-spacing: 0.4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.calc-hint:not(:empty)::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--app-warn);
+  box-shadow: 0 0 8px var(--app-warn);
+  flex-shrink: 0;
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.calc-btn {
+  background: var(--app-accent);
+  color: #050510;
+  border: none;
+  padding: 12px 28px;
+  min-height: 44px;
+  border-radius: var(--app-radius-sm);
+  font-family: var(--app-font-display);
+  font-size: 16px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  box-shadow: 0 0 20px var(--app-accent-glow);
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+}
+.calc-btn:hover:not(:disabled) {
+  background: #00ffa3;
+  box-shadow: 0 0 28px #00ff8788;
+  transform: translateY(-1px);
+}
+.calc-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+.calc-btn:disabled {
+  background: #1a1a28;
+  color: #555;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.mode-switch {
+  display: inline-flex;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-sm);
+  overflow: hidden;
+  background: var(--app-surface);
+  padding: 3px;
+  gap: 2px;
+}
+.mode-btn {
+  background: transparent;
+  color: var(--app-text-dim);
+  border: none;
+  padding: 9px 16px;
+  min-height: 36px;
+  border-radius: 6px;
+  font-family: var(--app-font-mono);
+  font-size: 12px;
+  letter-spacing: 1.2px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.mode-btn:hover:not(.active) {
+  color: var(--app-text-muted);
+  background: #ffffff06;
+}
+.mode-btn.active {
+  background: var(--app-accent-dim);
+  color: var(--app-accent);
+  box-shadow: 0 0 0 1px #00ff8733;
+}
+
+.yield-sub {
+  font-size: 11px;
+  color: var(--app-text-dim);
+  letter-spacing: 1px;
+  margin-top: 2px;
+}
+
+.yield-input-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+/* Recharts polish */
+.recharts-default-tooltip {
+  border-radius: 8px !important;
+}
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke-opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .stat-card {
+    padding: 14px;
+  }
+  .chart-card {
+    padding: 16px;
+  }
+  .calc-bar {
+    bottom: 8px;
+    padding: 12px;
+  }
+  .calc-btn {
+    width: 100%;
+    text-align: center;
+  }
+  .num-input {
+    font-size: 16px; /* prevent iOS zoom */
   }
 }
