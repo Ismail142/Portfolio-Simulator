@@ -13,6 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import { RETURNS } from "./data/historicalReturns";
+import { WITHDRAWAL_RATES as RATES, RATE_COLORS, RATES_LABEL } from "./data/rates";
 
 const DW_STORAGE_KEY = "dynamic-withdrawal-inputs";
 
@@ -23,20 +24,40 @@ const DATA_YEARS = Object.keys(HISTORICAL_RETURNS)
   .sort((a, b) => a - b);
 const MIN_YEAR = DATA_YEARS[0];
 const MAX_YEAR = DATA_YEARS[DATA_YEARS.length - 1];
-
-const RATES = [4, 5, 6, 7, 8] as const;
-const RATE_COLORS: Record<number, string> = {
-  4: "#00ff87",
-  5: "#00d4ff",
-  6: "#ffbe0b",
-  7: "#ff6b6b",
-  8: "#8338ec",
-};
+const MAX_DURATION = MAX_YEAR - MIN_YEAR + 1;
 
 function getHistoricalReturn(calendarYear: number): number {
   if (HISTORICAL_RETURNS[calendarYear] !== undefined) return HISTORICAL_RETURNS[calendarYear];
   return 0;
 }
+
+function computeCAGR(returns: number[]): number {
+  let wealth = 1;
+  for (const r of returns) {
+    wealth *= 1 + r / 100;
+  }
+  return (Math.pow(wealth, 1 / returns.length) - 1) * 100;
+}
+
+type CagrPeriod = {
+  start: number;
+  end: number;
+  cagr: number;
+};
+
+function buildCagrPeriods(window: number): CagrPeriod[] {
+  const maxStart = MAX_YEAR - window + 1;
+  const out: CagrPeriod[] = [];
+  for (let start = MIN_YEAR; start <= maxStart; start++) {
+    const returns: number[] = [];
+    for (let y = start; y < start + window; y++) {
+      returns.push(HISTORICAL_RETURNS[y] ?? 0);
+    }
+    out.push({ start, end: start + window - 1, cagr: computeCAGR(returns) });
+  }
+  return out;
+}
+
 
 const fmt = (n: number) =>
   n >= 1_000_000
@@ -100,6 +121,13 @@ function simulate(
     });
   }
   return result;
+}
+
+/** Average monthly withdrawal over the full simulation (zeros after depletion included). */
+function avgMonthlyWithdrawal(sim: SimYear[]): number {
+  const rows = sim.slice(1);
+  if (rows.length === 0) return 0;
+  return rows.reduce((sum, d) => sum + d.withdrawal, 0) / rows.length / 12;
 }
 
 const MultiTooltip = ({
@@ -289,6 +317,49 @@ export default function DynamicWithdrawal() {
     [portfolio, startYear, endYear],
   );
 
+  /** Best / median / worst CAGR windows for the chosen duration + all-time, with rate ranking by avg monthly income. */
+  const regimeAnalysis = useMemo(() => {
+    const window = duration ?? 30;
+    const clamped = Math.max(1, Math.min(window, MAX_DURATION));
+    const periods = buildCagrPeriods(clamped);
+    if (periods.length === 0) return null;
+
+    const sorted = [...periods].sort((a, b) => a.cagr - b.cagr);
+    const worstP = sorted[0];
+    const bestP = sorted[sorted.length - 1];
+    const medianP = sorted[Math.floor(sorted.length / 2)];
+
+    const allTimeReturns = DATA_YEARS.map((y) => HISTORICAL_RETURNS[y] ?? 0);
+    const allTime = {
+      start: MIN_YEAR,
+      end: MAX_YEAR,
+      cagr: computeCAGR(allTimeReturns),
+    };
+
+    type RegimeKey = "best" | "median" | "worst" | "allTime";
+    const regimes: { key: RegimeKey; label: string; start: number; end: number; cagr: number }[] = [
+      { key: "best", label: "Best window", start: bestP.start, end: bestP.end, cagr: bestP.cagr },
+      { key: "median", label: "Median window", start: medianP.start, end: medianP.end, cagr: medianP.cagr },
+      { key: "worst", label: "Worst window", start: worstP.start, end: worstP.end, cagr: worstP.cagr },
+      { key: "allTime", label: "All-time", start: allTime.start, end: allTime.end, cagr: allTime.cagr },
+    ];
+
+    return regimes.map((reg) => {
+      const byRate = RATES.map((rate) => {
+        const data = simulate(portfolio, rate, reg.start, reg.end);
+        return {
+          rate,
+          avgMonthly: avgMonthlyWithdrawal(data),
+          finalBalance: data[data.length - 1]?.portfolioAfter ?? 0,
+        };
+      });
+      const winner = byRate.reduce((best, cur) =>
+        cur.avgMonthly > best.avgMonthly ? cur : best,
+      );
+      return { ...reg, byRate, winner };
+    });
+  }, [portfolio, duration]);
+
   const chartData = useMemo(() => {
     const base = allSims[0].data;
     return base.map((row, i) => {
@@ -477,12 +548,15 @@ export default function DynamicWithdrawal() {
         }}
       >
         <span style={{ color: "#888", letterSpacing: 1 }}>STRATEGY · </span>
-        Each year the portfolio grows (or falls) by the historical S&amp;P 500 return, then you
-        withdraw a fixed percentage of whatever it is worth at that point. All five rates{" "}
-        <span style={{ color: "#00ff87" }}>4%</span>, <span style={{ color: "#00d4ff" }}>5%</span>,{" "}
-        <span style={{ color: "#ffbe0b" }}>6%</span>, <span style={{ color: "#ff6b6b" }}>7%</span>,{" "}
-        <span style={{ color: "#8338ec" }}>8%</span> are simulated simultaneously using real S&P 500
-        returns {MIN_YEAR}–{MAX_YEAR}.
+        Each year the portfolio grows (or falls) by the historical S&P 500 return, then you
+        withdraw a fixed percentage of whatever it is worth at that point. All rates{" "}
+        {RATES.map((r, i) => (
+          <span key={r}>
+            {i > 0 ? ", " : ""}
+            <span style={{ color: RATE_COLORS[r] }}>{r}%</span>
+          </span>
+        ))}{" "}
+        are simulated simultaneously using real S&P 500 returns {MIN_YEAR}–{MAX_YEAR}.
       </div>
 
       {calculated &&
@@ -509,6 +583,144 @@ export default function DynamicWithdrawal() {
 
           return (
             <>
+              {/* Regime analysis: best/median/worst/all-time by CAGR window */}
+              {regimeAnalysis && (
+                <div className="section">
+                  <h2 className="section-title">
+                    BEST INCOME BY MARKET REGIME · {duration ?? 30}-YR WINDOWS
+                  </h2>
+                  <p style={{ fontSize: 12, color: "#888", marginBottom: 16, lineHeight: 1.5 }}>
+                    Windows ranked by S&P 500 CAGR. For each regime, every rate ({RATES_LABEL}) is simulated;
+                    the winner is the rate with the highest average monthly withdrawal.
+                  </p>
+                  <style>{`
+                    .regime-grid {
+                      display: grid;
+                      gap: 12px;
+                      grid-template-columns: 1fr;
+                    }
+                    @media (min-width: 640px) {
+                      .regime-grid { grid-template-columns: repeat(2, 1fr); }
+                    }
+                    @media (min-width: 1100px) {
+                      .regime-grid { grid-template-columns: repeat(4, 1fr); }
+                    }
+                  `}</style>
+                  <div className="regime-grid">
+                    {regimeAnalysis.map((reg) => {
+                      const accent =
+                        reg.key === "best"
+                          ? "#00ff87"
+                          : reg.key === "median"
+                            ? "#00d4ff"
+                            : reg.key === "worst"
+                              ? "#ff6b6b"
+                              : "#ffbe0b";
+                      return (
+                        <div
+                          key={reg.key}
+                          style={{
+                            background: "#0a0a14",
+                            border: `1px solid ${accent}33`,
+                            borderRadius: 12,
+                            padding: "16px 16px 14px",
+                            position: "relative",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 10,
+                              letterSpacing: 1.5,
+                              color: accent,
+                              marginBottom: 6,
+                              fontFamily: "'DM Mono', monospace",
+                            }}
+                          >
+                            {reg.label.toUpperCase()}
+                          </div>
+                          <div
+                            style={{
+                              fontFamily: "'Bebas Neue', sans-serif",
+                              fontSize: 18,
+                              color: "#e6e6f0",
+                              marginBottom: 4,
+                            }}
+                          >
+                            {reg.start}–{reg.end}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#666", marginBottom: 12 }}>
+                            CAGR {reg.cagr >= 0 ? "+" : ""}
+                            {reg.cagr.toFixed(2)}%
+                          </div>
+
+                          <div
+                            style={{
+                              background: `${accent}15`,
+                              border: `1px solid ${accent}44`,
+                              borderRadius: 8,
+                              padding: "10px 12px",
+                              marginBottom: 12,
+                            }}
+                          >
+                            <div style={{ fontSize: 10, color: "#888", letterSpacing: 1, marginBottom: 4 }}>
+                              BEST AVG MONTHLY INCOME
+                            </div>
+                            <div
+                              style={{
+                                fontFamily: "'Bebas Neue', sans-serif",
+                                fontSize: 26,
+                                color: accent,
+                                lineHeight: 1,
+                              }}
+                            >
+                              {reg.winner.rate}%
+                            </div>
+                            <div style={{ fontSize: 13, color: "#ccc", marginTop: 4 }}>
+                              {fmt(reg.winner.avgMonthly)}
+                              <span style={{ color: "#666" }}>/mo</span>
+                              {exchangeRate ? (
+                                <span style={{ color: "#666", fontSize: 11, marginLeft: 6 }}>
+                                  {fmtGHS(reg.winner.avgMonthly, exchangeRate)}/mo
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {reg.byRate.map((row) => {
+                              const isWin = row.rate === reg.winner.rate;
+                              const color = RATE_COLORS[row.rate] ?? "#aaa";
+                              return (
+                                <div
+                                  key={row.rate}
+                                  style={{
+                                    display: "flex",
+                                    justifyContent: "space-between",
+                                    alignItems: "center",
+                                    fontSize: 11,
+                                    padding: "3px 0",
+                                    borderTop: "1px solid #1a1a28",
+                                  }}
+                                >
+                                  <span style={{ color, fontWeight: isWin ? 600 : 400 }}>
+                                    {isWin ? "★ " : ""}
+                                    {row.rate}%
+                                  </span>
+                                  <span style={{ color: isWin ? "#e6e6f0" : "#888" }}>
+                                    {fmt(row.avgMonthly)}/mo
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Rate comparison cards */}
               <div className="section">
                 <h2 className="section-title">
@@ -536,7 +748,7 @@ export default function DynamicWithdrawal() {
                   }
                   @media (min-width: 1100px) {
                     .rate-cards-grid {
-                      grid-template-columns: repeat(5, 1fr);
+                      grid-template-columns: repeat(6, 1fr);
                     }
                   }
                 `}</style>
@@ -1060,7 +1272,7 @@ export default function DynamicWithdrawal() {
                   <div>
                     <span style={{ color: "#555", letterSpacing: 1 }}>WITHDRAWAL RULE</span>
                     <span style={{ color: "#00ff87", marginLeft: 10 }}>
-                      4 / 5 / 6 / 7 / 8% of current portfolio value each year
+                      {RATES_LABEL} of current portfolio value each year
                     </span>
                   </div>
                   <div>
@@ -1082,7 +1294,7 @@ export default function DynamicWithdrawal() {
         >
           <div style={{ fontSize: 36, marginBottom: 12 }}>📈</div>
           <div style={{ fontSize: 14, letterSpacing: 1 }}>
-            Enter your details above and press CALCULATE to compare all five withdrawal rates
+            Enter your details above and press CALCULATE to compare all withdrawal rates
           </div>
         </div>
       )}

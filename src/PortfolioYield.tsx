@@ -1,13 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-
-const YIELD_RATES = [4, 5, 6, 7, 8] as const;
-const RATE_COLORS: Record<number, string> = {
-  4: "#00ff87",
-  5: "#00d4ff",
-  6: "#ffbe0b",
-  7: "#ff6b6b",
-  8: "#ff006e",
-};
+import { WITHDRAWAL_RATES as YIELD_RATES, RATE_COLORS } from "./data/rates";
 
 const STORAGE_KEY = "portfolio-yield-inputs";
 
