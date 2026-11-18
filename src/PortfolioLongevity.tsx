@@ -156,10 +156,12 @@ export default function PortfolioLongevity() {
   const [draftPortfolio, setDraftPortfolio] = useState<number | "">(500000);
   const [draftReturn, setDraftReturn] = useState<number | "">(7);
   const [draftWithdrawal, setDraftWithdrawal] = useState<number | "">(2500);
+  const [draftAge, setDraftAge] = useState<number | "">(40);
 
   const [portfolio, setPortfolio] = useState(500000);
   const [annualReturn, setAnnualReturn] = useState(7);
   const [monthlyWithdrawal, setMonthlyWithdrawal] = useState(2500);
+  const [currentAge, setCurrentAge] = useState(40);
 
   // Load saved inputs
   useEffect(() => {
@@ -171,16 +173,20 @@ export default function PortfolioLongevity() {
         portfolio?: number;
         annualReturn?: number;
         monthlyWithdrawal?: number;
+        currentAge?: number;
       };
       const p = Math.max(0, Number(saved.portfolio) || 0);
       const r = Number(saved.annualReturn) ?? 7;
       const w = Math.max(0, Number(saved.monthlyWithdrawal) || 0);
+      const a = Math.max(0, Math.min(120, Number(saved.currentAge) || 40));
       setDraftPortfolio(p);
       setDraftReturn(r);
       setDraftWithdrawal(w);
+      setDraftAge(a);
       setPortfolio(p);
       setAnnualReturn(r);
       setMonthlyWithdrawal(w);
+      setCurrentAge(a);
     } catch {
       /* ignore */
     }
@@ -189,22 +195,26 @@ export default function PortfolioLongevity() {
   const isDirty =
     Number(draftPortfolio) !== portfolio ||
     Number(draftReturn) !== annualReturn ||
-    Number(draftWithdrawal) !== monthlyWithdrawal;
+    Number(draftWithdrawal) !== monthlyWithdrawal ||
+    Number(draftAge) !== currentAge;
 
   const handleCalculate = () => {
     const p = Math.max(0, Number(draftPortfolio) || 0);
     const r = Number(draftReturn) || 0;
     const w = Math.max(0, Number(draftWithdrawal) || 0);
+    const a = Math.max(0, Math.min(120, Number(draftAge) || 0));
     setDraftPortfolio(p);
     setDraftReturn(r);
     setDraftWithdrawal(w);
+    setDraftAge(a);
     setPortfolio(p);
     setAnnualReturn(r);
     setMonthlyWithdrawal(w);
+    setCurrentAge(a);
     try {
       window.localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ portfolio: p, annualReturn: r, monthlyWithdrawal: w }),
+        JSON.stringify({ portfolio: p, annualReturn: r, monthlyWithdrawal: w, currentAge: a }),
       );
     } catch {
       /* ignore */
@@ -234,10 +244,15 @@ export default function PortfolioLongevity() {
           ? `${result.years} year${result.years !== 1 ? "s" : ""}`
           : `${result.years} year${result.years !== 1 ? "s" : ""} ${result.remainingMonths} mo`;
 
+  const depletionAge =
+    result.sustainable || !result.depleted
+      ? null
+      : Math.round((currentAge + result.months / 12) * 10) / 10;
+
   const statusText = result.sustainable
     ? "Sustainable — withdrawals covered by returns"
     : result.depleted
-      ? `Depleted after ${durationLabel}`
+      ? `Depleted after ${durationLabel}${depletionAge != null ? ` (age ${depletionAge})` : ""}`
       : durationLabel;
 
   return (
@@ -418,6 +433,27 @@ export default function PortfolioLongevity() {
             }
           />
         </div>
+
+        <div className="stat-card slider-wrap">
+          <div className="slider-label">
+            <span>Current Age</span>
+            <span className="slider-val">
+              {typeof draftAge === "number" ? draftAge : "—"}
+            </span>
+          </div>
+          <input
+            className="num-input"
+            type="number"
+            min={0}
+            max={120}
+            step={1}
+            placeholder="40"
+            value={draftAge === "" ? "" : draftAge}
+            onChange={(e) =>
+              setDraftAge(e.target.value === "" ? "" : Number(e.target.value))
+            }
+          />
+        </div>
       </div>
 
       <div style={{ marginBottom: 28 }}>
@@ -436,6 +472,11 @@ export default function PortfolioLongevity() {
         <div className="longevity-result-label">Portfolio will last</div>
         <div className="longevity-result-value">{durationLabel}</div>
         <div className="longevity-result-sub">{statusText}</div>
+        {depletionAge != null && (
+          <div className="longevity-result-sub" style={{ marginTop: 6, color: "#00ff87" }}>
+            Runs out at age {depletionAge}
+          </div>
+        )}
       </div>
 
       {/* Forever / sustainable withdrawal */}

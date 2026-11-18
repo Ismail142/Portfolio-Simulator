@@ -7,6 +7,7 @@ import DynamicWithdrawal from "./DynamicWithdrawal";
 import SP500Returns from "./SP500Returns";
 import CryptoReturns from "./CryptoReturns";
 import UsdGhsReturns from "./UsdGhsReturns";
+import MonteCarloWithdrawal from "./MonteCarloWithdrawal";
 
 type PageId =
   | "portfolio-longevity"
@@ -14,6 +15,7 @@ type PageId =
   | "retirement-planner"
   | "yield-calculator"
   | "dynamic-withdrawal"
+  | "monte-carlo-withdrawal"
   | "sp500-returns"
   | "crypto-returns"
   | "usdghs-returns";
@@ -33,6 +35,7 @@ const NAV_GROUPS: {
       { id: "retirement-planner", label: "Retirement Planner", short: "Retirement" },
       { id: "yield-calculator", label: "Yield Calculator", short: "Yield" },
       { id: "dynamic-withdrawal", label: "Dynamic Withdrawal", short: "Dynamic" },
+      { id: "monte-carlo-withdrawal", label: "Monte Carlo Withdrawal", short: "Monte Carlo" },
     ],
   },
   {
@@ -73,6 +76,11 @@ const PAGE_META: Record<PageId, { title: string; subtitle: string; group: string
     subtitle: `Backtest withdrawal rates against S&P 500 returns · 1926–${new Date().getFullYear()}`,
     group: "Planners",
   },
+  "monte-carlo-withdrawal": {
+    title: "Monte Carlo Withdrawal",
+    subtitle: "Highest safe monthly withdrawal or success probability via historical bootstrap",
+    group: "Planners",
+  },
   "sp500-returns": {
     title: "S&P 500 Returns",
     subtitle: "Rolling CAGRs, return distributions, and best / median / worst windows",
@@ -96,6 +104,7 @@ const PAGE_COMPONENTS: Record<PageId, ComponentType> = {
   "retirement-planner": RetirementDrawdown,
   "yield-calculator": PortfolioYield,
   "dynamic-withdrawal": DynamicWithdrawal,
+  "monte-carlo-withdrawal": MonteCarloWithdrawal,
   "sp500-returns": SP500Returns,
   "crypto-returns": CryptoReturns,
   "usdghs-returns": UsdGhsReturns,
