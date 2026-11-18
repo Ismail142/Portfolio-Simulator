@@ -17,6 +17,7 @@ A collection of client-side portfolio and retirement planning tools. Model how l
 | **Retirement Drawdown** | Solve for the monthly withdrawal that depletes the portfolio at a chosen life expectancy. |
 | **Yield Calculator** | Estimate monthly and annual income at 4–8% yields. Dual currency (USD & GHS). |
 | **Dynamic Withdrawal** | Backtest fixed withdrawal rates against real S&P 500 returns (1926–present). |
+| **Monte Carlo Withdrawal** | Find the highest safe monthly withdrawal or evaluate a specific amount via historical bootstrap Monte Carlo. |
 
 ### Markets
 
@@ -64,6 +65,7 @@ src/
 ├── RetirementDrawdown.tsx
 ├── PortfolioYield.tsx
 ├── DynamicWithdrawal.tsx
+├── MonteCarloWithdrawal.tsx
 ├── SP500Returns.tsx
 ├── CryptoReturns.tsx
 ├── UsdGhsReturns.tsx
