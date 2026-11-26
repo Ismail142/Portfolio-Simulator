@@ -1,6 +1,6 @@
 // USD/GHS annual exchange-rate returns (calendar year % change)
 export const USDGHS_RETURNS: Record<number, number> = {
-  "2026": 11.46,
+  "2026": 13.3,
   "2025": -29.45,
   "2024": 23.98,
   "2023": 17.93,
